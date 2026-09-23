@@ -9,13 +9,13 @@ API_ID = int(environ.get('API_ID', '29608422'))
 API_HASH = environ.get('API_HASH', '3db2f8e109301f02f5d9c8f10dd79244')
 
 # Bot Token, This Is Main Bot
-BOT_TOKEN = environ.get('BOT_TOKEN', "")
+BOT_TOKEN = environ.get('BOT_TOKEN', "8765885559:AAGepuq7edjdkX1dnocii3EfUFiLGX1v9IA")
 
 # Admin Telegram Account Id For Withdraw Notification Or Anything Else
 ADMIN = int(environ.get('ADMIN', '8056243176'))
 
 # Back Up Bot Token For Fetching Message When Floodwait Comes
-BACKUP_BOT_TOKEN = environ.get('BACKUP_BOT_TOKEN', "")
+BACKUP_BOT_TOKEN = environ.get('BACKUP_BOT_TOKEN', "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k")
 
 # Log Channel, In This Channel Your All File Stored.
 LOG_CHANNEL = int(environ.get('LOG_CHANNEL', '-1004450462812'))
@@ -24,7 +24,7 @@ LOG_CHANNEL = int(environ.get('LOG_CHANNEL', '-1004450462812'))
 MONGODB_URI = environ.get("MONGODB_URI", "mongodb+srv://sabbirvai1122:SABBIRVAI1122@cluster0.t1bsiei.mongodb.net/?appName=Cluster0")
 
 # Stream Url Means Your Deploy Server App Url, Here You Media Will Be Stream And Ads Will Be Shown.
-STREAM_URL = environ.get("STREAM_URL", "https://sr-video-quality-1.onrender.com")
+STREAM_URL = environ.get("STREAM_URL", "")
 
 # This Link Used As Permanent Link That If Your Deploy App Deleted Then You Change Stream Url, So This Link Will Redirect To Stream Url.
 LINK_URL = environ.get("LINK_URL", "https://anime112266.blogspot.com/p/ss-anime-box.html")
