@@ -1,6 +1,6 @@
-# Don't Remove Credit @VJ_Botz
-# Subscribe YouTube Channel For Amazing Bot @Tech_VJ
-# Ask Doubt on telegram @KingVJ01
+# Don't Remove Credit @Fair033838 
+# Subscribe YouTube Channel For Amazing Bot @newnatokmoviehere 
+# Ask Doubt on telegram @ss_anime_box 
 
 import re, math, logging, secrets, mimetypes, time
 from info import *
@@ -25,7 +25,7 @@ html_content = """
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Welcome to VJ Disk</title>
+    <title>Welcome to Ss Anime</title>
     <style>
         body {
             margin: 0;
@@ -84,7 +84,7 @@ html_content = """
 </head>
 <body>
     <div class="container">
-        <h1>Welcome To VJ Disk!</h1>
+        <h1>Welcome To Ss Anime!</h1>
         <p>Your ultimate destination for streaming and sharing videos!</p>
         <p>Explore a world of entertainment at your fingertips.</p>
         <button class="button" onclick="alert('Explore Now!')">Get Started</button>
