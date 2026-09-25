@@ -1,12 +1,15 @@
 import os
 import re
+import uvicorn
 import asyncio
 from urllib.parse import quote
-from aiohttp import web
+from fastapi import FastAPI, Request, Response
+from fastapi.responses import HTMLResponse, StreamingResponse
+from fastapi.middleware.cors import CORSMiddleware
 from hydrogram import Client, filters
 from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
-# ----------------- Configuration ----------------- #
+# ----------------- Configurations ----------------- #
 
 API_ID = int(os.environ.get("API_ID", "29608422"))
 API_HASH = os.environ.get("API_HASH", "3db2f8e109301f02f5d9c8f10dd79244")
@@ -18,29 +21,46 @@ PORT = int(os.environ.get("PORT", "8080"))
 BIN_CHANNEL = int(os.environ.get("BIN_CHANNEL", "-1004450462812"))
 CHANNEL_LINK = "https://t.me/ss_anime_box"
 
-# ----------------- User Rename State Storage ----------------- #
 rename_state = {}
+
+# ----------------- Hydrogram Bot Client ----------------- #
+
+bot = Client(
+    name="bot_session",
+    api_id=API_ID,
+    api_hash=API_HASH,
+    bot_token=BOT_TOKEN,
+    in_memory=True
+)
+
+# ----------------- FastAPI App Setup ----------------- #
+
+app = FastAPI()
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+    expose_headers=["Content-Range", "Accept-Ranges", "Content-Length", "Content-Type"]
+)
 
 # ----------------- Helper Functions ----------------- #
 
 def clean_and_encode_filename(file_name: str) -> str:
     if not file_name:
         return "video.mp4"
-    
     clean_name = re.sub(r'\[.*?\]|\(.*?\)', '', file_name)
-    
     if '.' in clean_name:
         name_part, ext_part = clean_name.rsplit('.', 1)
         ext = ext_part.lower()
     else:
         name_part = clean_name
         ext = "mp4"
-        
     name_part = re.sub(r'[^a-zA-Z0-9.-]', '_', name_part)
     name_part = re.sub(r'_+', '_', name_part).strip('_')
-    
-    full_name = f"{name_part}.{ext}"
-    return quote(full_name)
+    return quote(f"{name_part}.{ext}")
 
 def humanbytes(size):
     if not size:
@@ -50,214 +70,133 @@ def humanbytes(size):
             return f"{size:.2f} {unit}"
         size /= 1024.0
 
-# ----------------- Web Server Routes ----------------- #
+# ----------------- Web Routes ----------------- #
 
-routes = web.RouteTableDef()
+@app.get("/", response_class=HTMLResponse)
+async def root():
+    return "<h1>SS Anime Box Web Server Active!</h1>"
 
-@routes.get("/")
-async def root_route(request):
-    return web.Response(text="Bot is Live and Running!", status=200)
-
-@routes.get("/watch/{chat_id}/{message_id}/{file_name}")
-async def stream_handler(request):
-    app = request.app['bot_client']
-    chat_id = int(request.match_info['chat_id'])
-    message_id = int(request.match_info['message_id'])
+@app.get("/watch/{chat_id}/{message_id}/{file_name}", response_class=HTMLResponse)
+async def watch_player(chat_id: int, message_id: int, file_name: str):
+    download_url = f"{URL}/download/{chat_id}/{message_id}/{file_name}"
     
-    try:
-        msg = await app.get_messages(chat_id, message_id)
-        media = msg.document or msg.video or msg.audio
-        if not media:
-            return web.Response(text="File Not Found", status=404)
-        
-        display_name = getattr(media, 'file_name', 'Video Stream')
-        clean_filename = clean_and_encode_filename(display_name)
-        download_url = f"/download/{chat_id}/{message_id}/{clean_filename}"
-        
-        # 2nd Photo Style Fullscreen/Clean Player
-        html_content = f"""
-        <!DOCTYPE html>
-        <html lang="bn">
-        <head>
-            <meta charset="UTF-8">
-            <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>{display_name}</title>
-            <style>
-                * {{ margin: 0; padding: 0; box-sizing: border-box; }}
-                body, html {{ width: 100%; height: 100%; background-color: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; }}
-                .video-container {{ width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; }}
-                video {{ width: 100%; height: 100%; max-height: 100vh; object-fit: contain; background: #000; }}
-                .title-overlay {{ position: absolute; top: 15px; left: 15px; z-index: 10; background: rgba(0, 0, 0, 0.6); padding: 8px 15px; border-radius: 5px; font-size: 14px; max-width: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
-            </style>
-        </head>
-        <body>
+    # HTML UI Template
+    html_content = f"""
+    <!DOCTYPE html>
+    <html lang="bn">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>{file_name} - SS Anime Box</title>
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+        <style>
+            * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
+            body {{ background-color: #0b0f19; color: #ffffff; display: flex; justify-content: center; }}
+            .container {{ width: 100%; max-width: 480px; background-color: #0f1422; min-height: 100vh; padding-bottom: 20px; }}
+            .top-bar {{ display: flex; justify-content: space-between; align-items: center; padding: 12px 16px; background-color: #0b0f19; }}
+            .back-btn {{ background: #1a2030; color: #fff; border: none; padding: 6px 14px; border-radius: 20px; cursor: pointer; font-size: 14px; text-decoration: none; }}
+            .brand-tag {{ background: #1a2030; color: #ffffff; padding: 6px 12px; border-radius: 20px; font-size: 12px; display: flex; align-items: center; gap: 6px; }}
+            .dot {{ height: 8px; width: 8px; background-color: #ff9800; border-radius: 50%; }}
+            .video-container {{ width: 100%; background-color: #000; aspect-ratio: 16 / 9; }}
+            video {{ width: 100%; height: 100%; object-fit: contain; }}
+            .controls-section {{ padding: 12px 16px; display: flex; flex-direction: column; gap: 10px; }}
+            .action-grid {{ display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 16px; }}
+            .action-btn {{ background: #ff9800; color: #000; border: none; padding: 12px; border-radius: 12px; font-size: 14px; font-weight: bold; display: flex; align-items: center; justify-content: center; gap: 6px; cursor: pointer; text-decoration: none; }}
+            .info-section {{ padding: 16px; border-top: 1px solid #1a2030; }}
+            .title-header h2 {{ font-size: 15px; font-weight: 600; color: #ff9800; word-break: break-all; }}
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="top-bar">
+                <a href="{CHANNEL_LINK}" class="back-btn"><i class="fa-solid fa-arrow-left"></i> Channel</a>
+                <div class="brand-tag"><span class="dot"></span> SS ANIME BOX</div>
+            </div>
             <div class="video-container">
-                <div class="title-overlay">📁 {display_name}</div>
-                <video controls autoplay name="media" playsinline>
+                <video id="player" controls autoplay preload="metadata" crossorigin="anonymous">
                     <source src="{download_url}" type="video/mp4">
                     <source src="{download_url}" type="video/x-matroska">
-                    Your browser does not support video playback.
+                    Your browser does not support HTML5 video streaming.
                 </video>
             </div>
-        </body>
-        </html>
-        """
-        return web.Response(text=html_content, content_type='text/html')
-    except Exception as e:
-        return web.Response(text=str(e), status=500)
+            <div class="action-grid">
+                <a href="{download_url}" class="action-btn"><i class="fa-solid fa-download"></i> Direct Download</a>
+                <a href="vlc://{download_url}" class="action-btn" style="background:#1a2030; color:#fff;"><i class="fa-solid fa-play"></i> Open in VLC</a>
+            </div>
+            <div class="info-section">
+                <div class="title-header">
+                    <h2>📁 {file_name}</h2>
+                </div>
+            </div>
+        </div>
+    </body>
+    </html>
+    """
+    return html_content
 
-@routes.get("/download/{chat_id}/{message_id}/{file_name}")
-async def download_handler(request):
-    app = request.app['bot_client']
-    chat_id = int(request.match_info['chat_id'])
-    message_id = int(request.match_info['message_id'])
-    
-    msg = await app.get_messages(chat_id, message_id)
+@app.get("/download/{chat_id}/{message_id}/{file_name}")
+async def download_file(chat_id: int, message_id: int, file_name: str, request: Request):
+    msg = await bot.get_messages(chat_id, message_id)
     media = msg.document or msg.video or msg.audio
     
-    clean_filename = clean_and_encode_filename(getattr(media, 'file_name', 'video.mp4'))
-    
-    response = web.StreamResponse(
-        status=200,
-        headers={
-            'Content-Type': 'application/octet-stream',
-            'Content-Disposition': f'attachment; filename="{clean_filename}"',
-            'Content-Length': str(media.file_size),
-            'Accept-Ranges': 'bytes'
-        }
+    async def media_streamer():
+        async for chunk in bot.stream_media(msg, limit=0):
+            yield chunk
+
+    headers = {
+        'Content-Type': 'video/mp4',
+        'Content-Disposition': f'inline; filename="{file_name}"',
+        'Accept-Ranges': 'bytes',
+        'Content-Length': str(media.file_size)
+    }
+    return StreamingResponse(media_streamer(), headers=headers)
+
+# ----------------- Bot Event Handlers ----------------- #
+
+@bot.on_message(filters.command("start") & filters.private)
+async def start_cmd(client, message: Message):
+    await message.reply_text("👋 **SS Anime Box Streaming Bot is Online!**\n\nযেকোনো ভিডিও বা ফাইল পাঠান।")
+
+@bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def handle_media(client, message: Message):
+    try:
+        bin_msg = await message.forward(BIN_CHANNEL)
+    except Exception:
+        bin_msg = message
+
+    media = bin_msg.document or bin_msg.video or bin_msg.audio
+    original_name = getattr(media, 'file_name', 'video.mp4')
+    safe_name = clean_and_encode_filename(original_name)
+    file_size = humanbytes(getattr(media, 'file_size', 0))
+    file_ext = original_name.rsplit('.', 1)[-1].upper() if '.' in original_name else "MP4"
+
+    if file_ext in ["MP4", "WEBM"]:
+        stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
+    else:
+        stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (VLC Player ব্যবহার করুন)"
+
+    watch_link = f"{URL}/watch/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
+    download_link = f"{URL}/download/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
+
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
+        [InlineKeyboardButton("Direct Download 📥", url=download_link)],
+        [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
+    ])
+
+    caption = (
+        f"📁 **ফাইল নাম:** `{original_name}`\n"
+        f"🏷 **টাইপ:** `{file_ext}` | 📦 **সাইজ:** `{file_size}`\n"
+        f"📌 **স্ট্যাটাস:** {stream_status}\n\n"
+        f"👇 **আপনার লিংক নিচে তৈরি তৈরি হয়ে গেছে:**"
     )
-    await response.prepare(request)
-    
-    async for chunk in app.stream_media(msg, limit=0):
-        await response.write(chunk)
-        
-    return response
+    await message.reply_text(caption, reply_markup=reply_markup)
 
-# ----------------- Main Execution ----------------- #
+# ----------------- Server Lifecycle ----------------- #
 
-async def main():
-    app = Client(
-        name="bot_session",
-        api_id=API_ID,
-        api_hash=API_HASH,
-        bot_token=BOT_TOKEN,
-        in_memory=True
-    )
-
-    @app.on_message(filters.command("start") & filters.private)
-    async def start_handler(bot, message: Message):
-        reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
-        ])
-        await message.reply_text(
-            "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
-            "আমাকে যেকোনো ভিডিও বা ফাইল পাঠান, আমি লিংক বানিয়ে দেব।",
-            reply_markup=reply_markup
-        )
-
-    @app.on_message(filters.private & (filters.document | filters.video | filters.audio))
-    async def media_handler(bot, message: Message):
-        # Forward file to BIN Channel
-        try:
-            bin_msg = await message.forward(BIN_CHANNEL)
-        except Exception:
-            bin_msg = message
-
-        media = bin_msg.document or bin_msg.video or bin_msg.audio
-        original_name = getattr(media, 'file_name', 'video.mp4')
-        safe_name = clean_and_encode_filename(original_name)
-        file_size = humanbytes(getattr(media, 'file_size', 0))
-        
-        file_ext = original_name.rsplit('.', 1)[-1].upper() if '.' in original_name else "MP4"
-        
-        # Compatibility Check
-        if file_ext in ["MP4", "WEBM"]:
-            stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
-        else:
-            stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (ডাউনলোড অথবা VLC/MX Player এ প্লে করুন)"
-
-        watch_link = f"{URL}/watch/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
-        download_link = f"{URL}/download/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
-        
-        reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
-            [InlineKeyboardButton("Direct Download 📥", url=download_link)],
-            [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{bin_msg.id}")],
-            [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
-        ])
-        
-        caption_text = (
-            f"📁 **ফাইল নাম:** `{original_name}`\n"
-            f"🏷 **ফাইল টাইপ:** `{file_ext}`\n"
-            f"📦 **ফাইল সাইজ:** `{file_size}`\n"
-            f"📌 **স্ট্রিমিং স্ট্যাটাস:** {stream_status}\n\n"
-            f"👇 **আপনার ভিডিও দেখার ও ডাউনলোডের লিংক নিচে দেওয়া হলো:**"
-        )
-        
-        await message.reply_text(caption_text, reply_markup=reply_markup)
-
-    @app.on_callback_query(filters.regex(r"^rename_"))
-    async def rename_callback(bot, query: CallbackQuery):
-        msg_id = int(query.data.split("_")[1])
-        rename_state[query.from_user.id] = msg_id
-        await query.message.reply_text("✏️ **নতুন ফাইলের নাম পাঠান (এক্সটেনশন সহ, যেমন: `Anime_S01E01.mp4`):**")
-        await query.answer()
-
-    @app.on_message(filters.private & filters.text & ~filters.command(["start"]))
-    async def process_rename(bot, message: Message):
-        user_id = message.from_user.id
-        if user_id in rename_state:
-            bin_msg_id = rename_state.pop(user_id)
-            new_name = message.text.strip()
-            
-            try:
-                bin_msg = await app.get_messages(BIN_CHANNEL, bin_msg_id)
-                media = bin_msg.document or bin_msg.video or bin_msg.audio
-                safe_name = clean_and_encode_filename(new_name)
-                file_size = humanbytes(getattr(media, 'file_size', 0))
-                
-                file_ext = new_name.rsplit('.', 1)[-1].upper() if '.' in new_name else "MP4"
-                
-                if file_ext in ["MP4", "WEBM"]:
-                    stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
-                else:
-                    stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (ডাউনলোড অথবা VLC/MX Player এ প্লে করুন)"
-
-                watch_link = f"{URL}/watch/{BIN_CHANNEL}/{bin_msg_id}/{safe_name}"
-                download_link = f"{URL}/download/{BIN_CHANNEL}/{bin_msg_id}/{safe_name}"
-                
-                reply_markup = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
-                    [InlineKeyboardButton("Direct Download 📥", url=download_link)],
-                    [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{bin_msg_id}")],
-                    [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
-                ])
-                
-                caption_text = (
-                    f"📁 **নতুন ফাইল নাম:** `{new_name}`\n"
-                    f"🏷 **ফাইল টাইপ:** `{file_ext}`\n"
-                    f"📦 **ফাইল সাইজ:** `{file_size}`\n"
-                    f"📌 **স্ট্রিমিং স্ট্যাটাস:** {stream_status}\n\n"
-                    f"👇 **আপনার ভিডিও দেখার ও ডাউনলোডের নতুন লিংক নিচে দেওয়া হলো:**"
-                )
-                
-                await message.reply_text(caption_text, reply_markup=reply_markup)
-            except Exception as e:
-                await message.reply_text(f"❌ নাম পরিবর্তন করতে সমস্যা হয়েছে: {str(e)}")
-
-    await app.start()
-    
-    web_app = web.Application()
-    web_app['bot_client'] = app
-    web_app.add_routes(routes)
-    
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    
-    print("Bot & Web Server Started Successfully!")
-    await asyncio.Event().wait()
+@app.on_event("startup")
+async def startup_event():
+    asyncio.create_task(bot.start())
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    uvicorn.run(app, host="0.0.0.0", port=PORT)
