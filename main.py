@@ -3,8 +3,8 @@ import re
 import asyncio
 from urllib.parse import quote
 from aiohttp import web
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram import Client, filters
+from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ----------------- Configuration & Credentials ----------------- #
 
@@ -135,21 +135,17 @@ async def media_handler(bot, message: Message):
     
     await message.reply_text(f"**File Name:** `{original_name}`\n\nএখানে ক্লিক করে দেখুন বা ডাউনলোড করুন:", reply_markup=reply_markup)
 
-# ----------------- Start Application (Fixed Loop) ----------------- #
+# ----------------- Start Application ----------------- #
 
 async def main():
-    # Start Telegram Bot
     await app.start()
-    
-    # Start Web Server
     web_app = web.Application()
     web_app.add_routes(routes)
     runner = web.AppRunner(web_app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
-    
-    print("Bot and Web Server started successfully!")
+    print("Bot and Server started successfully!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
