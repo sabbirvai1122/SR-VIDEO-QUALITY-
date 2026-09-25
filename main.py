@@ -3,8 +3,8 @@ import re
 import asyncio
 from urllib.parse import quote
 from aiohttp import web
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram import Client, filters
+from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ----------------- Configuration ----------------- #
 
@@ -17,12 +17,13 @@ PORT = int(os.environ.get("PORT", "8080"))
 
 CHANNEL_LINK = "https://t.me/ss_anime_box"
 
-# ক্র্যাশ প্রতিরোধ করতে পাইরোগ্রাম ক্লায়েন্ট সেটআপ
+# plugins=dict(root="") দিয়ে বাইরের সমস্ত ফোল্ডারের ForceSub ফাইল পুরোপুরি নিষ্ক্রিয় করা হলো
 app = Client(
     "StreamBotSession",
     api_id=API_ID,
     api_hash=API_HASH,
-    bot_token=BOT_TOKEN
+    bot_token=BOT_TOKEN,
+    plugins=dict(root="")
 )
 
 # ----------------- Helper Functions ----------------- #
@@ -130,7 +131,7 @@ async def start_handler(bot, message: Message):
     ])
     await message.reply_text(
         "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
-        "আমাকে যেকোনো ফাইল পাঠান, আমি প্লে ও ডাউনলোডের লিংক বানিয়ে দেব।",
+        "আমাকে যেকোনো ফাইল পাঠান, আমি সরাসরি লিংক বানিয়ে দেব।",
         reply_markup=reply_markup
     )
 
@@ -166,5 +167,4 @@ async def main():
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
