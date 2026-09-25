@@ -37,7 +37,8 @@ bot = Client(
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
-    in_memory=True
+    in_memory=True,
+    max_concurrent_transmissions=10
 )
 
 app = FastAPI()
@@ -48,7 +49,7 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
-    expose_headers=["Content-Range", "Accept-Ranges", "Content-Length", "Content-Type"]
+    expose_headers=["Content-Range", "Accept-Ranges", "Content-Length", "Content-Type", "Content-Disposition"]
 )
 
 # ----------------- Helper Functions ----------------- #
@@ -75,7 +76,7 @@ def humanbytes(size):
             return f"{size:.2f} {unit}"
         size /= 1024.0
 
-# ----------------- Web Routes & Clean Player ----------------- #
+# ----------------- Original Clean Video Player Design ----------------- #
 
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def root():
@@ -83,7 +84,7 @@ async def root():
 
 @app.get("/watch/{chat_id}/{message_id}/{file_name}", response_class=HTMLResponse)
 async def watch_player(chat_id: int, message_id: int, file_name: str):
-    download_url = f"{URL}/download/{chat_id}/{message_id}/{file_name}"
+    stream_url = f"{URL}/stream/{chat_id}/{message_id}/{file_name}"
     
     html_content = f"""
     <!DOCTYPE html>
@@ -107,8 +108,8 @@ async def watch_player(chat_id: int, message_id: int, file_name: str):
     <body>
         <div class="container">
             <div class="video-container">
-                <video id="player" controls autoplay preload="auto" crossorigin="anonymous">
-                    <source src="{download_url}" type="video/mp4">
+                <video id="player" controls autoplay playsinline preload="auto" crossorigin="anonymous">
+                    <source src="{stream_url}" type="video/mp4">
                     Your browser does not support HTML5 video streaming.
                 </video>
             </div>
@@ -125,10 +126,17 @@ async def watch_player(chat_id: int, message_id: int, file_name: str):
     """
     return html_content
 
-# ----------------- Video Streaming with Working Seeking Support ----------------- #
+# ----------------- Streaming and Direct Download Handlers ----------------- #
+
+@app.get("/stream/{chat_id}/{message_id}/{file_name}")
+async def stream_file(chat_id: int, message_id: int, file_name: str, request: Request):
+    return await handle_file_stream(chat_id, message_id, file_name, request, is_download=False)
 
 @app.get("/download/{chat_id}/{message_id}/{file_name}")
 async def download_file(chat_id: int, message_id: int, file_name: str, request: Request):
+    return await handle_file_stream(chat_id, message_id, file_name, request, is_download=True)
+
+async def handle_file_stream(chat_id: int, message_id: int, file_name: str, request: Request, is_download: bool = False):
     try:
         msg = await bot.get_messages(chat_id, message_id)
     except Exception:
@@ -140,6 +148,7 @@ async def download_file(chat_id: int, message_id: int, file_name: str, request: 
 
     file_size = media.file_size
     range_header = request.headers.get('range')
+    disposition_type = "attachment" if is_download else "inline"
 
     if range_header:
         byte_opts = range_header.replace('bytes=', '').split('-')
@@ -152,7 +161,7 @@ async def download_file(chat_id: int, message_id: int, file_name: str, request: 
 
         content_length = (end - start) + 1
 
-        async def ranged_streamer():
+        async def fast_ranged_streamer():
             current_pos = 0
             async for chunk in bot.stream_media(msg, limit=0):
                 chunk_len = len(chunk)
@@ -169,12 +178,12 @@ async def download_file(chat_id: int, message_id: int, file_name: str, request: 
             'Accept-Ranges': 'bytes',
             'Content-Length': str(content_length),
             'Content-Type': 'video/mp4',
-            'Content-Disposition': f'inline; filename="{file_name}"'
+            'Content-Disposition': f'{disposition_type}; filename="{file_name}"'
         }
-        return StreamingResponse(ranged_streamer(), status_code=206, headers=headers)
+        return StreamingResponse(fast_ranged_streamer(), status_code=206, headers=headers)
 
     else:
-        async def full_streamer():
+        async def fast_full_streamer():
             async for chunk in bot.stream_media(msg, limit=0):
                 yield chunk
 
@@ -182,9 +191,9 @@ async def download_file(chat_id: int, message_id: int, file_name: str, request: 
             'Accept-Ranges': 'bytes',
             'Content-Length': str(file_size),
             'Content-Type': 'video/mp4',
-            'Content-Disposition': f'inline; filename="{file_name}"'
+            'Content-Disposition': f'{disposition_type}; filename="{file_name}"'
         }
-        return StreamingResponse(full_streamer(), status_code=200, headers=headers)
+        return StreamingResponse(fast_full_streamer(), status_code=200, headers=headers)
 
 # ----------------- Bot Event Handlers ----------------- #
 
@@ -195,19 +204,16 @@ async def start_cmd(client, message: Message):
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def handle_media(client, message: Message):
     try:
-        # Try to forward to BIN CHANNEL
         try:
             bin_msg = await message.forward(BIN_CHANNEL)
             target_chat_id = BIN_CHANNEL
             target_msg_id = bin_msg.id
         except Exception:
-            # If BIN_CHANNEL forwarding fails, use current chat message directly
             target_chat_id = message.chat.id
             target_msg_id = message.id
 
         media = message.document or message.video or message.audio
         
-        # Get filename safely
         original_name = getattr(media, 'file_name', None)
         if not original_name:
             original_name = f"video_{message.id}.mp4"
