@@ -4,7 +4,7 @@ import asyncio
 from urllib.parse import quote
 from aiohttp import web
 from hydrogram import Client, filters
-from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
 # ----------------- Configuration ----------------- #
 
@@ -15,7 +15,11 @@ BOT_TOKEN = os.environ.get("BOT_TOKEN", "8765885559:AAGepuq7edjdkX1dnocii3EfUFiL
 URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com").rstrip('/')
 PORT = int(os.environ.get("PORT", "8080"))
 
+BIN_CHANNEL = int(os.environ.get("BIN_CHANNEL", "-1004450462812"))
 CHANNEL_LINK = "https://t.me/ss_anime_box"
+
+# ----------------- User Rename State Storage ----------------- #
+rename_state = {}
 
 # ----------------- Helper Functions ----------------- #
 
@@ -66,44 +70,35 @@ async def stream_handler(request):
         if not media:
             return web.Response(text="File Not Found", status=404)
         
-        clean_filename = clean_and_encode_filename(getattr(media, 'file_name', 'video.mp4'))
+        display_name = getattr(media, 'file_name', 'Video Stream')
+        clean_filename = clean_and_encode_filename(display_name)
         download_url = f"/download/{chat_id}/{message_id}/{clean_filename}"
         
+        # 2nd Photo Style Fullscreen/Clean Player
         html_content = f"""
         <!DOCTYPE html>
-        <html lang="en">
+        <html lang="bn">
         <head>
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
-            <title>Stream Video</title>
-            <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
+            <title>{display_name}</title>
             <style>
-                body {{ background-color: #0f0f0f; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin: 0; padding: 15px; }}
-                .container {{ max-width: 800px; margin: 0 auto; }}
-                .video-js {{ width: 100% !important; height: auto !important; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }}
-                .btn-group {{ margin-top: 20px; }}
-                .btn {{ display: block; width: 100%; padding: 14px; margin: 10px 0; background: #1e1e1e; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; border: 1px solid #333; box-sizing: border-box; transition: 0.3s; }}
-                .btn:hover {{ background: #007bff; border-color: #007bff; }}
-                .note {{ color: #aaa; font-size: 13px; margin-top: 8px; }}
+                * {{ margin: 0; padding: 0; box-sizing: border-box; }}
+                body, html {{ width: 100%; height: 100%; background-color: #000; color: #fff; font-family: sans-serif; overflow: hidden; display: flex; flex-direction: column; justify-content: center; align-items: center; }}
+                .video-container {{ width: 100%; height: 100%; display: flex; flex-direction: column; justify-content: center; align-items: center; position: relative; }}
+                video {{ width: 100%; height: 100%; max-height: 100vh; object-fit: contain; background: #000; }}
+                .title-overlay {{ position: absolute; top: 15px; left: 15px; z-index: 10; background: rgba(0, 0, 0, 0.6); padding: 8px 15px; border-radius: 5px; font-size: 14px; max-width: 90%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }}
             </style>
         </head>
         <body>
-            <div class="container">
-                <video id="my-video" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="auto" data-setup='{{}}'>
+            <div class="video-container">
+                <div class="title-overlay">📁 {display_name}</div>
+                <video controls autoplay name="media" playsinline>
                     <source src="{download_url}" type="video/mp4">
-                    <source src="{download_url}" type="video/webm">
                     <source src="{download_url}" type="video/x-matroska">
                     Your browser does not support video playback.
                 </video>
-
-                <div class="btn-group">
-                    <a class="btn" href="{download_url}">📥 DIRECT DOWNLOAD</a>
-                    <a class="btn" href="vlc://{URL}{download_url}">🎬 WATCH IN VLC PLAYER</a>
-                    <a class="btn" href="intent://{URL.replace('https://', '').replace('http://', '')}{download_url}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end">▶ WATCH IN MX PLAYER</a>
-                </div>
-                <p class="note">💡 ব্রাউজারে সমস্য হলে "WATCH IN VLC" অথবা "MX PLAYER" এ ক্লিক করুন।</p>
             </div>
-            <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
         </body>
         </html>
         """
@@ -122,7 +117,6 @@ async def download_handler(request):
     
     clean_filename = clean_and_encode_filename(getattr(media, 'file_name', 'video.mp4'))
     
-    # attachment হেডারের কারণে লিংকে চাপ দিলেই ফাইলটি সরাসরি ডাউনলোড হওয়া শুরু করবে
     response = web.StreamResponse(
         status=200,
         headers={
@@ -157,40 +151,99 @@ async def main():
         ])
         await message.reply_text(
             "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
-            "আমাকে যেকোনো ফাইল পাঠান, আমি সরাসরি লিংক বানিয়ে দেব।",
+            "আমাকে যেকোনো ভিডিও বা ফাইল পাঠান, আমি লিংক বানিয়ে দেব।",
             reply_markup=reply_markup
         )
 
     @app.on_message(filters.private & (filters.document | filters.video | filters.audio))
     async def media_handler(bot, message: Message):
-        media = message.document or message.video or message.audio
+        # Forward file to BIN Channel
+        try:
+            bin_msg = await message.forward(BIN_CHANNEL)
+        except Exception:
+            bin_msg = message
+
+        media = bin_msg.document or bin_msg.video or bin_msg.audio
         original_name = getattr(media, 'file_name', 'video.mp4')
         safe_name = clean_and_encode_filename(original_name)
         file_size = humanbytes(getattr(media, 'file_size', 0))
         
-        # ফাইল এক্সটেনশন/টাইপ বের করা
-        if '.' in original_name:
-            file_ext = original_name.rsplit('.', 1)[-1].upper()
+        file_ext = original_name.rsplit('.', 1)[-1].upper() if '.' in original_name else "MP4"
+        
+        # Compatibility Check
+        if file_ext in ["MP4", "WEBM"]:
+            stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
         else:
-            file_ext = "MP4"
+            stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (ডাউনলোড অথবা VLC/MX Player এ প্লে করুন)"
 
-        watch_link = f"{URL}/watch/{message.chat.id}/{message.id}/{safe_name}"
-        download_link = f"{URL}/download/{message.chat.id}/{message.id}/{safe_name}"
+        watch_link = f"{URL}/watch/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
+        download_link = f"{URL}/download/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
         
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
             [InlineKeyboardButton("Direct Download 📥", url=download_link)],
+            [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{bin_msg.id}")],
             [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
         ])
         
         caption_text = (
             f"📁 **ফাইল নাম:** `{original_name}`\n"
             f"🏷 **ফাইল টাইপ:** `{file_ext}`\n"
-            f"📦 **ফাইল সাইজ:** `{file_size}`\n\n"
+            f"📦 **ফাইল সাইজ:** `{file_size}`\n"
+            f"📌 **স্ট্রিমিং স্ট্যাটাস:** {stream_status}\n\n"
             f"👇 **আপনার ভিডিও দেখার ও ডাউনলোডের লিংক নিচে দেওয়া হলো:**"
         )
         
         await message.reply_text(caption_text, reply_markup=reply_markup)
+
+    @app.on_callback_query(filters.regex(r"^rename_"))
+    async def rename_callback(bot, query: CallbackQuery):
+        msg_id = int(query.data.split("_")[1])
+        rename_state[query.from_user.id] = msg_id
+        await query.message.reply_text("✏️ **নতুন ফাইলের নাম পাঠান (এক্সটেনশন সহ, যেমন: `Anime_S01E01.mp4`):**")
+        await query.answer()
+
+    @app.on_message(filters.private & filters.text & ~filters.command(["start"]))
+    async def process_rename(bot, message: Message):
+        user_id = message.from_user.id
+        if user_id in rename_state:
+            bin_msg_id = rename_state.pop(user_id)
+            new_name = message.text.strip()
+            
+            try:
+                bin_msg = await app.get_messages(BIN_CHANNEL, bin_msg_id)
+                media = bin_msg.document or bin_msg.video or bin_msg.audio
+                safe_name = clean_and_encode_filename(new_name)
+                file_size = humanbytes(getattr(media, 'file_size', 0))
+                
+                file_ext = new_name.rsplit('.', 1)[-1].upper() if '.' in new_name else "MP4"
+                
+                if file_ext in ["MP4", "WEBM"]:
+                    stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
+                else:
+                    stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (ডাউনলোড অথবা VLC/MX Player এ প্লে করুন)"
+
+                watch_link = f"{URL}/watch/{BIN_CHANNEL}/{bin_msg_id}/{safe_name}"
+                download_link = f"{URL}/download/{BIN_CHANNEL}/{bin_msg_id}/{safe_name}"
+                
+                reply_markup = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
+                    [InlineKeyboardButton("Direct Download 📥", url=download_link)],
+                    [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{bin_msg_id}")],
+                    [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
+                ])
+                
+                caption_text = (
+                    f"📁 **নতুন ফাইল নাম:** `{new_name}`\n"
+                    f"🏷 **ফাইল টাইপ:** `{file_ext}`\n"
+                    f"📦 **ফাইল সাইজ:** `{file_size}`\n"
+                    f"📌 **স্ট্রিমিং স্ট্যাটাস:** {stream_status}\n\n"
+                    f"👇 **আপনার ভিডিও দেখার ও ডাউনলোডের নতুন লিংক নিচে দেওয়া হলো:**"
+                )
+                
+                await message.reply_text(caption_text, reply_markup=reply_markup)
+            except Exception as e:
+                await message.reply_text(f"❌ নাম পরিবর্তন করতে সমস্যা হয়েছে: {str(e)}")
 
     await app.start()
     
