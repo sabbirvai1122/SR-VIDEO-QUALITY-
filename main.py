@@ -1,22 +1,23 @@
 import os
 import re
+import asyncio
 from urllib.parse import quote
 from aiohttp import web
-from pyrogram import Client, filters
-from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from hydrogram import Client, filters
+from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
-# ----------------- Configurations ----------------- #
+# ----------------- Configuration ----------------- #
 
 API_ID = int(os.environ.get("API_ID", "29608422"))
 API_HASH = os.environ.get("API_HASH", "3db2f8e109301f02f5d9c8f10dd79244")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8765885559:AAGepuq7edjdkX1dnocii3EfUFiLGX1v9IA")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k")
 
 URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com").rstrip('/')
 PORT = int(os.environ.get("PORT", "8080"))
 
-bot = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+app = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# ----------------- Clean Filename Function ----------------- #
+# ----------------- Helper Functions ----------------- #
 
 def clean_and_encode_filename(file_name: str) -> str:
     if not file_name:
@@ -33,7 +34,7 @@ def clean_and_encode_filename(file_name: str) -> str:
         
     return quote(clean_name)
 
-# ----------------- Web Routes ----------------- #
+# ----------------- Web Server Routes ----------------- #
 
 routes = web.RouteTableDef()
 
@@ -47,7 +48,7 @@ async def stream_handler(request):
     message_id = int(request.match_info['message_id'])
     
     try:
-        msg = await bot.get_messages(chat_id, message_id)
+        msg = await app.get_messages(chat_id, message_id)
         media = msg.document or msg.video or msg.audio
         if not media:
             return web.Response(text="File Not Found", status=404)
@@ -92,7 +93,7 @@ async def download_handler(request):
     chat_id = int(request.match_info['chat_id'])
     message_id = int(request.match_info['message_id'])
     
-    msg = await bot.get_messages(chat_id, message_id)
+    msg = await app.get_messages(chat_id, message_id)
     media = msg.document or msg.video or msg.audio
     
     clean_filename = clean_and_encode_filename(getattr(media, 'file_name', 'video.mp4'))
@@ -107,22 +108,22 @@ async def download_handler(request):
     )
     await response.prepare(request)
     
-    async for chunk in bot.stream_media(msg, limit=0):
+    async for chunk in app.stream_media(msg, limit=0):
         await response.write(chunk)
         
     return response
 
-# ----------------- Telegram Bot Handlers ----------------- #
+# ----------------- Telegram Handlers ----------------- #
 
-@bot.on_message(filters.command("start") & filters.private)
-async def start_handler(cli, message: Message):
+@app.on_message(filters.command("start") & filters.private)
+async def start_handler(bot, message: Message):
     await message.reply_text(
         "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
-        "আমাকে যেকোনো ভিডিও বা ফাইল পাঠান, আমি সরাসরি দেখার এবং ডাউনলোড করার লিংক তৈরি করে দেব।"
+        "আমাকে যেকোনো ভিডিও, অডিও বা ফাইল পাঠান, আমি সাথে সাথেই ওয়াচ ও সরাসরি ডাউনলোডের লিংক তৈরি করে দেব।"
     )
 
-@bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
-async def media_handler(cli, message: Message):
+@app.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def media_handler(bot, message: Message):
     media = message.document or message.video or message.audio
     original_name = getattr(media, 'file_name', 'video.mp4')
     safe_name = clean_and_encode_filename(original_name)
@@ -135,15 +136,21 @@ async def media_handler(cli, message: Message):
         [InlineKeyboardButton("Direct Download 📥", url=download_link)]
     ])
     
-    await message.reply_text(f"**File Name:** `{original_name}`\n\nআপনার ভিডিও লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
+    await message.reply_text(f"**File Name:** `{original_name}`\n\nলিংক তৈরি হয়েছে:", reply_markup=reply_markup)
 
-# ----------------- Start Application ----------------- #
+# ----------------- Start Services ----------------- #
 
-async def web_app():
-    app = web.Application()
-    app.add_routes(routes)
-    return app
+async def main():
+    await app.start()
+    web_app = web.Application()
+    web_app.add_routes(routes)
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    
+    print("Bot & Web Server running successfully!")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    bot.start()
-    web.run_app(web_app(), host="0.0.0.0", port=PORT)
+    asyncio.run(main())
