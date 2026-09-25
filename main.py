@@ -22,17 +22,29 @@ CHANNEL_LINK = "https://t.me/ss_anime_box"
 def clean_and_encode_filename(file_name: str) -> str:
     if not file_name:
         return "video.mp4"
+    
     clean_name = re.sub(r'\[.*?\]|\(.*?\)', '', file_name)
-    clean_name = re.sub(r'[^a-zA-Z0-9.-]', '_', clean_name)
-    clean_name = re.sub(r'_+', '_', clean_name).strip('_')
     
     if '.' in clean_name:
         name_part, ext_part = clean_name.rsplit('.', 1)
-        clean_name = f"{name_part}.{ext_part.lower()}"
+        ext = ext_part.lower()
     else:
-        clean_name += ".mp4"
+        name_part = clean_name
+        ext = "mp4"
         
-    return quote(clean_name)
+    name_part = re.sub(r'[^a-zA-Z0-9.-]', '_', name_part)
+    name_part = re.sub(r'_+', '_', name_part).strip('_')
+    
+    full_name = f"{name_part}.{ext}"
+    return quote(full_name)
+
+def humanbytes(size):
+    if not size:
+        return "0 B"
+    for unit in ['B', 'KB', 'MB', 'GB', 'TB']:
+        if size < 1024.0:
+            return f"{size:.2f} {unit}"
+        size /= 1024.0
 
 # ----------------- Web Server Routes ----------------- #
 
@@ -64,24 +76,34 @@ async def stream_handler(request):
             <meta charset="UTF-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0">
             <title>Stream Video</title>
+            <link href="https://vjs.zencdn.net/7.20.3/video-js.css" rel="stylesheet" />
             <style>
-                body {{ background-color: #121212; color: #fff; font-family: sans-serif; text-align: center; margin: 0; padding: 20px; }}
-                .container {{ max-width: 700px; margin: 0 auto; }}
-                video {{ width: 100%; max-height: 450px; background: #000; border-radius: 8px; margin-bottom: 15px; }}
-                .btn {{ display: block; width: 100%; padding: 12px; margin: 10px 0; background: #222; color: #fff; text-decoration: none; border-radius: 5px; font-weight: bold; border: 1px solid #444; box-sizing: border-box; }}
-                .btn:hover {{ background: #333; }}
+                body {{ background-color: #0f0f0f; color: #fff; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; text-align: center; margin: 0; padding: 15px; }}
+                .container {{ max-width: 800px; margin: 0 auto; }}
+                .video-js {{ width: 100% !important; height: auto !important; aspect-ratio: 16/9; border-radius: 10px; overflow: hidden; box-shadow: 0 4px 15px rgba(0,0,0,0.5); }}
+                .btn-group {{ margin-top: 20px; }}
+                .btn {{ display: block; width: 100%; padding: 14px; margin: 10px 0; background: #1e1e1e; color: #fff; text-decoration: none; border-radius: 8px; font-weight: bold; border: 1px solid #333; box-sizing: border-box; transition: 0.3s; }}
+                .btn:hover {{ background: #007bff; border-color: #007bff; }}
+                .note {{ color: #aaa; font-size: 13px; margin-top: 8px; }}
             </style>
         </head>
         <body>
             <div class="container">
-                <video controls autoplay name="media">
+                <video id="my-video" class="video-js vjs-default-skin vjs-big-play-centered" controls preload="auto" data-setup='{{}}'>
                     <source src="{download_url}" type="video/mp4">
-                    Your browser does not support HTML5 video.
+                    <source src="{download_url}" type="video/webm">
+                    <source src="{download_url}" type="video/x-matroska">
+                    Your browser does not support video playback.
                 </video>
-                <a class="btn" href="{download_url}">DOWNLOAD VIDEO</a>
-                <a class="btn" href="vlc://{URL}{download_url}">WATCH IN VLC PLAYER</a>
-                <a class="btn" href="intent://{URL.replace('https://', '').replace('http://', '')}{download_url}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end">WATCH IN MX PLAYER</a>
+
+                <div class="btn-group">
+                    <a class="btn" href="{download_url}">📥 DIRECT DOWNLOAD</a>
+                    <a class="btn" href="vlc://{URL}{download_url}">🎬 WATCH IN VLC PLAYER</a>
+                    <a class="btn" href="intent://{URL.replace('https://', '').replace('http://', '')}{download_url}#Intent;package=com.mxtech.videoplayer.ad;type=video/*;end">▶ WATCH IN MX PLAYER</a>
+                </div>
+                <p class="note">💡 ব্রাউজারে সমস্য হলে "WATCH IN VLC" অথবা "MX PLAYER" এ ক্লিক করুন।</p>
             </div>
+            <script src="https://vjs.zencdn.net/7.20.3/video.min.js"></script>
         </body>
         </html>
         """
@@ -100,12 +122,14 @@ async def download_handler(request):
     
     clean_filename = clean_and_encode_filename(getattr(media, 'file_name', 'video.mp4'))
     
+    # attachment হেডারের কারণে লিংকে চাপ দিলেই ফাইলটি সরাসরি ডাউনলোড হওয়া শুরু করবে
     response = web.StreamResponse(
         status=200,
         headers={
-            'Content-Type': 'video/mp4',
-            'Content-Disposition': f'inline; filename="{clean_filename}"',
-            'Content-Length': str(media.file_size)
+            'Content-Type': 'application/octet-stream',
+            'Content-Disposition': f'attachment; filename="{clean_filename}"',
+            'Content-Length': str(media.file_size),
+            'Accept-Ranges': 'bytes'
         }
     )
     await response.prepare(request)
@@ -118,7 +142,6 @@ async def download_handler(request):
 # ----------------- Main Execution ----------------- #
 
 async def main():
-    # Hydrogram Client-কে event loop তৈরি হওয়ার পর ইনিশিয়ালাইজ করা হচ্ছে
     app = Client(
         name="bot_session",
         api_id=API_ID,
@@ -143,7 +166,14 @@ async def main():
         media = message.document or message.video or message.audio
         original_name = getattr(media, 'file_name', 'video.mp4')
         safe_name = clean_and_encode_filename(original_name)
+        file_size = humanbytes(getattr(media, 'file_size', 0))
         
+        # ফাইল এক্সটেনশন/টাইপ বের করা
+        if '.' in original_name:
+            file_ext = original_name.rsplit('.', 1)[-1].upper()
+        else:
+            file_ext = "MP4"
+
         watch_link = f"{URL}/watch/{message.chat.id}/{message.id}/{safe_name}"
         download_link = f"{URL}/download/{message.chat.id}/{message.id}/{safe_name}"
         
@@ -153,7 +183,14 @@ async def main():
             [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
         ])
         
-        await message.reply_text(f"**ফাইল নাম:** `{original_name}`\n\nআপনার লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
+        caption_text = (
+            f"📁 **ফাইল নাম:** `{original_name}`\n"
+            f"🏷 **ফাইল টাইপ:** `{file_ext}`\n"
+            f"📦 **ফাইল সাইজ:** `{file_size}`\n\n"
+            f"👇 **আপনার ভিডিও দেখার ও ডাউনলোডের লিংক নিচে দেওয়া হলো:**"
+        )
+        
+        await message.reply_text(caption_text, reply_markup=reply_markup)
 
     await app.start()
     
