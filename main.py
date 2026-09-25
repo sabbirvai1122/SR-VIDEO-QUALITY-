@@ -1,5 +1,6 @@
 import os
 import re
+import asyncio
 from urllib.parse import quote
 from aiohttp import web
 from pyrogram import Client, filters
@@ -134,13 +135,27 @@ async def media_handler(bot, message: Message):
     
     await message.reply_text(f"**File Name:** `{original_name}`\n\nএখানে ক্লিক করে দেখুন বা ডাউনলোড করুন:", reply_markup=reply_markup)
 
-# ----------------- Start Application ----------------- #
+# ----------------- Start Application (Fixed Loop) ----------------- #
 
-async def web_server():
+async def main():
+    # Start Telegram Bot
+    await app.start()
+    
+    # Start Web Server
     web_app = web.Application()
     web_app.add_routes(routes)
-    return web_app
+    runner = web.AppRunner(web_app)
+    await runner.setup()
+    site = web.TCPSite(runner, "0.0.0.0", PORT)
+    await site.start()
+    
+    print("Bot and Web Server started successfully!")
+    await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    app.start()
-    web.run_app(web_server(), host="0.0.0.0", port=PORT)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(main())
+    except KeyboardInterrupt:
+        pass
