@@ -8,18 +8,18 @@ from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ----------------- Configuration ----------------- #
 
-API_ID = 29608422
-API_HASH = "3db2f8e109301f02f5d9c8f10dd79244"
-BOT_TOKEN = ""
+API_ID = int(os.environ.get("API_ID", "29608422"))
+API_HASH = os.environ.get("API_HASH", "3db2f8e109301f02f5d9c8f10dd79244")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8765885559:AAGepuq7edjdkX1dnocii3EfUFiLGX1v9IA")
 
-URL = "https://sr-video-quality-2.onrender.com".rstrip('/')
+URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com").rstrip('/')
 PORT = int(os.environ.get("PORT", "8080"))
 
 CHANNEL_LINK = "https://t.me/ss_anime_box"
 
-# memory session ব্যবহার করা হয়েছে যাতে সেশন ফাইল লকিং এরর না হয়
+# memory session ব্যবহার করা হয়েছে যাতে কোনো ফাইল লকিং বা ইনপুট প্রম্পট না আসে
 app = Client(
-    "StreamBotSession",
+    name="bot_session",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
@@ -152,9 +152,9 @@ async def media_handler(bot, message: Message):
     
     await message.reply_text(f"**ফাইল নাম:** `{original_name}`\n\nআপনার লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
 
-# ----------------- Start Services ----------------- #
+# ----------------- Main Execution ----------------- #
 
-async def start_services():
+async def main():
     await app.start()
     web_app = web.Application()
     web_app.add_routes(routes)
@@ -162,9 +162,8 @@ async def start_services():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
-    print("Bot is Live and Running!")
+    print("Bot & Web Server Started Successfully!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_services())
+    asyncio.run(main())
