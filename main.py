@@ -1,30 +1,26 @@
 import os
 import re
-import asyncio
 from urllib.parse import quote
 from aiohttp import web
-from hydrogram import Client, filters
-from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
+from pyrogram import Client, filters
+from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
-# ----------------- Configuration & Credentials ----------------- #
+# ----------------- Configurations ----------------- #
 
 API_ID = int(os.environ.get("API_ID", "29608422"))
 API_HASH = os.environ.get("API_HASH", "3db2f8e109301f02f5d9c8f10dd79244")
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k")
 
-URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com")
+URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com").rstrip('/')
 PORT = int(os.environ.get("PORT", "8080"))
 
-# Bot Client Setup
-app = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+bot = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# ----------------- Helper Functions ----------------- #
+# ----------------- Clean Filename ----------------- #
 
 def clean_and_encode_filename(file_name: str) -> str:
-    """থার্ড ব্র্যাকেট [ ], স্পেস ও স্পেশাল ক্যারেক্টার মুছে নিরাপদ ফাইল নেম তৈরি করে"""
     if not file_name:
         return "video.mp4"
-    
     clean_name = re.sub(r'\[.*?\]|\(.*?\)', '', file_name)
     clean_name = re.sub(r'[^a-zA-Z0-9.-]', '_', clean_name)
     clean_name = re.sub(r'_+', '_', clean_name).strip('_')
@@ -37,7 +33,7 @@ def clean_and_encode_filename(file_name: str) -> str:
         
     return quote(clean_name)
 
-# ----------------- Web Server Routes ----------------- #
+# ----------------- Web Routes ----------------- #
 
 routes = web.RouteTableDef()
 
@@ -51,7 +47,7 @@ async def stream_handler(request):
     message_id = int(request.match_info['message_id'])
     
     try:
-        msg = await app.get_messages(chat_id, message_id)
+        msg = await bot.get_messages(chat_id, message_id)
         media = msg.document or msg.video or msg.audio
         if not media:
             return web.Response(text="File Not Found", status=404)
@@ -96,7 +92,7 @@ async def download_handler(request):
     chat_id = int(request.match_info['chat_id'])
     message_id = int(request.match_info['message_id'])
     
-    msg = await app.get_messages(chat_id, message_id)
+    msg = await bot.get_messages(chat_id, message_id)
     media = msg.document or msg.video or msg.audio
     
     clean_filename = clean_and_encode_filename(getattr(media, 'file_name', 'video.mp4'))
@@ -111,47 +107,36 @@ async def download_handler(request):
     )
     await response.prepare(request)
     
-    async for chunk in app.stream_media(msg, limit=0):
+    async for chunk in bot.stream_media(msg, limit=0):
         await response.write(chunk)
         
     return response
 
-# ----------------- Telegram Handlers ----------------- #
+# ----------------- Telegram Bot Handlers ----------------- #
 
-@app.on_message(filters.private & (filters.document | filters.video | filters.audio))
-async def media_handler(bot, message: Message):
+@bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
+async def media_handler(cli, message: Message):
     media = message.document or message.video or message.audio
     original_name = getattr(media, 'file_name', 'video.mp4')
     safe_name = clean_and_encode_filename(original_name)
     
-    base_url = URL.rstrip('/')
-    watch_link = f"{base_url}/watch/{message.chat.id}/{message.id}/{safe_name}"
-    download_link = f"{base_url}/download/{message.chat.id}/{message.id}/{safe_name}"
+    watch_link = f"{URL}/watch/{message.chat.id}/{message.id}/{safe_name}"
+    download_link = f"{URL}/download/{message.chat.id}/{message.id}/{safe_name}"
     
     reply_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
         [InlineKeyboardButton("Direct Download 📥", url=download_link)]
     ])
     
-    await message.reply_text(f"**File Name:** `{original_name}`\n\nএখানে ক্লিক করে দেখুন বা ডাউনলোড করুন:", reply_markup=reply_markup)
+    await message.reply_text(f"**File Name:** `{original_name}`\n\nলিংক তৈরি হয়েছে:", reply_markup=reply_markup)
 
-# ----------------- Start Application ----------------- #
+# ----------------- Start Services ----------------- #
 
-async def main():
-    await app.start()
-    web_app = web.Application()
-    web_app.add_routes(routes)
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    print("Bot and Server started successfully!")
-    await asyncio.Event().wait()
+async def web_app():
+    app = web.Application()
+    app.add_routes(routes)
+    return app
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(main())
-    except KeyboardInterrupt:
-        pass
+    bot.start()
+    web.run_app(web_app(), host="0.0.0.0", port=PORT)
