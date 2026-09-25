@@ -3,41 +3,22 @@ import re
 import asyncio
 from urllib.parse import quote
 from aiohttp import web
-
-# ----------------- Force Override Environment Variables ----------------- #
-# Render-এর ভেতরে থাকা পুরানো যেকোনো চ্যানেলের নাম বা টোকেন ওভাররাইড করা হচ্ছে
-
-for key in ["FORCE_SUB", "UPDATES_CHANNEL", "CHANNEL", "FSUB", "MUST_JOIN"]:
-    os.environ.pop(key, None)
-
-os.environ["API_ID"] = "29608422"
-os.environ["API_HASH"] = "3db2f8e109301f02f5d9c8f10dd79244"
-
-# আপনার দেওয়া মেইন বট টোকেন
-os.environ["BOT_TOKEN"] = "8765885559:AAGepuq7edjdkX1dnocii3EfUFiLGX1v9IA"
-
-# ব্যাকআপ বট টোকেন (প্রয়োজনে ব্যবহারের জন্য সংরক্ষিত):
-# BACKUP_BOT_TOKEN = "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k"
-
-os.environ["URL"] = "https://sr-video-quality-2.onrender.com"
-os.environ["PORT"] = "8080"
-
-# ----------------- Configurations ----------------- #
-
-API_ID = int(os.environ.get("API_ID"))
-API_HASH = os.environ.get("API_HASH")
-BOT_TOKEN = os.environ.get("BOT_TOKEN")
-
-URL = os.environ.get("URL").rstrip('/')
-PORT = int(os.environ.get("PORT"))
-
-# আপনার দেওয়া সাব চ্যানেল লিংক
-CHANNEL_LINK = "https://t.me/ss_anime_box"
-
 from hydrogram import Client, filters
 from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
-app = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
+# ----------------- Configuration ----------------- #
+
+API_ID = 29608422
+API_HASH = "3db2f8e109301f02f5d9c8f10dd79244"
+BOT_TOKEN = "8765885559:AAGepuq7edjdkX1dnocii3EfUFiLGX1v9IA"
+
+URL = "https://sr-video-quality-2.onrender.com".rstrip('/')
+PORT = int(os.environ.get("PORT", "8080"))
+
+CHANNEL_LINK = "https://t.me/ss_anime_box"
+
+# plugins=None দিয়ে প্লাগইনস ফোল্ডারের সমস্ত ForceSub ব্লক করে দেওয়া হলো
+app = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN, plugins=None)
 
 # ----------------- Helper Functions ----------------- #
 
@@ -144,7 +125,7 @@ async def start_handler(bot, message: Message):
     ])
     await message.reply_text(
         "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
-        "আমাকে যেকোনো ভিডিও, অডিও বা ফাইল পাঠান—আমি সরাসরি প্লে করার ও ডিরেক্ট ডাউনলোডের লিংক বানিয়ে দেব।",
+        "আমাকে যেকোনো ভিডিও বা ফাইল পাঠান, আমি লিংক বানিয়ে দেব।",
         reply_markup=reply_markup
     )
 
@@ -163,7 +144,7 @@ async def media_handler(bot, message: Message):
         [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
     ])
     
-    await message.reply_text(f"**ফাইল নাম:** `{original_name}`\n\nআপনার লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
+    await message.reply_text(f"**ফাইল নেম:** `{original_name}`\n\nআপনার লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
 
 # ----------------- Start Services ----------------- #
 
