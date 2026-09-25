@@ -9,6 +9,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from hydrogram import Client, filters
 from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
 
+# ----------------- Python 3.10+ Event Loop Fix ----------------- #
+# Pyrogram/Hydrogram Python 3.10+ RuntimeError Fix করার জন্য Client ইনস্ট্যান্সের আগেই লুপ সেট করা হলো
+try:
+    loop = asyncio.get_event_loop()
+except RuntimeError:
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+
 # ----------------- Configuration ----------------- #
 
 API_ID = int(os.environ.get("API_ID", "29608422"))
@@ -78,7 +86,7 @@ async def root():
 async def watch_player(chat_id: int, message_id: int, file_name: str):
     download_url = f"{URL}/download/{chat_id}/{message_id}/{file_name}"
     
-    # Clean Web Player - Video er upore kono name thakbe na
+    # Clean Player: ভিডিওর ভেতরের টাইটেল/ফাইলের নাম পুরোপুরি সরিয়ে ফেলা হয়েছে
     html_content = f"""
     <!DOCTYPE html>
     <html lang="bn">
@@ -229,7 +237,7 @@ async def process_rename(client, message: Message):
         except Exception as e:
             await message.reply_text(f"❌ সমস্যা হয়েছে: {str(e)}")
 
-# ----------------- Main Runner with Event Loop Fix ----------------- #
+# ----------------- Main Execution ----------------- #
 
 async def start_all():
     await bot.start()
@@ -238,8 +246,6 @@ async def start_all():
     await server.serve()
 
 if __name__ == "__main__":
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
     try:
         loop.run_until_complete(start_all())
     except KeyboardInterrupt:
