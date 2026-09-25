@@ -7,18 +7,12 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 # ----------------- Configuration & Credentials ----------------- #
 
-API_ID = 29608422
-API_HASH = "3db2f8e109301f02f5d9c8f10dd79244"
-BOT_TOKEN = "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k"
+API_ID = int(os.environ.get("API_ID", "29608422"))
+API_HASH = os.environ.get("API_HASH", "3db2f8e109301f02f5d9c8f10dd79244")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k")
 
-# Render App URL
-URL = "https://sr-video-quality-2.onrender.com"
+URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com")
 PORT = int(os.environ.get("PORT", "8080"))
-
-# Additional Configurations
-BIN_CHANNEL = -1004450462812
-OWNER_ID = 8056243176
-DATABASE_URL = "mongodb+srv://mdohidh20:emETBcodRUOnB69C@movienamerequest.smfx6uk.mongodb.net/?retryWrites=true&w=majority&appName=Movienamerequest"
 
 # Bot Client Setup
 app = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
@@ -30,16 +24,10 @@ def clean_and_encode_filename(file_name: str) -> str:
     if not file_name:
         return "video.mp4"
     
-    # ১. ব্র্যাকেট ও তার ভেতরের টেক্সট মুছে ফেলা [ ... ] বা ( ... )
     clean_name = re.sub(r'\[.*?\]|\(.*?\)', '', file_name)
-    
-    # ২. অকেজো ক্যারেক্টারকে আন্ডারস্কোর (_) দিয়ে রিপ্লেস করা
     clean_name = re.sub(r'[^a-zA-Z0-9.-]', '_', clean_name)
-    
-    # ৩. পর পর একাধিক আন্ডারস্কোর থাকলে একটা করা
     clean_name = re.sub(r'_+', '_', clean_name).strip('_')
     
-    # ৪. এক্সটেনশন ছোট হাতের করা (.Mp4 -> .mp4)
     if '.' in clean_name:
         name_part, ext_part = clean_name.rsplit('.', 1)
         clean_name = f"{name_part}.{ext_part.lower()}"
@@ -70,7 +58,6 @@ async def stream_handler(request):
         clean_filename = clean_and_encode_filename(getattr(media, 'file_name', 'video.mp4'))
         download_url = f"/download/{chat_id}/{message_id}/{clean_filename}"
         
-        # HTML Video Player UI
         html_content = f"""
         <!DOCTYPE html>
         <html lang="en">
@@ -149,18 +136,11 @@ async def media_handler(bot, message: Message):
 
 # ----------------- Start Application ----------------- #
 
-async def start_services():
+async def web_server():
     web_app = web.Application()
     web_app.add_routes(routes)
-    runner = web.AppRunner(web_app)
-    await runner.setup()
-    site = web.TCPSite(runner, "0.0.0.0", PORT)
-    await site.start()
-    await app.start()
-    print("Bot is successfully running!")
+    return web_app
 
 if __name__ == "__main__":
-    import asyncio
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(start_services())
-    loop.run_forever()
+    app.start()
+    web.run_app(web_server(), host="0.0.0.0", port=PORT)
