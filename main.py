@@ -9,14 +9,14 @@ from pyrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 API_ID = int(os.environ.get("API_ID", "29608422"))
 API_HASH = os.environ.get("API_HASH", "3db2f8e109301f02f5d9c8f10dd79244")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k")
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8765885559:AAGepuq7edjdkX1dnocii3EfUFiLGX1v9IA")
 
 URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com").rstrip('/')
 PORT = int(os.environ.get("PORT", "8080"))
 
 bot = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
-# ----------------- Clean Filename ----------------- #
+# ----------------- Clean Filename Function ----------------- #
 
 def clean_and_encode_filename(file_name: str) -> str:
     if not file_name:
@@ -114,6 +114,13 @@ async def download_handler(request):
 
 # ----------------- Telegram Bot Handlers ----------------- #
 
+@bot.on_message(filters.command("start") & filters.private)
+async def start_handler(cli, message: Message):
+    await message.reply_text(
+        "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
+        "আমাকে যেকোনো ভিডিও বা ফাইল পাঠান, আমি সরাসরি দেখার এবং ডাউনলোড করার লিংক তৈরি করে দেব।"
+    )
+
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def media_handler(cli, message: Message):
     media = message.document or message.video or message.audio
@@ -128,9 +135,9 @@ async def media_handler(cli, message: Message):
         [InlineKeyboardButton("Direct Download 📥", url=download_link)]
     ])
     
-    await message.reply_text(f"**File Name:** `{original_name}`\n\nলিংক তৈরি হয়েছে:", reply_markup=reply_markup)
+    await message.reply_text(f"**File Name:** `{original_name}`\n\nআপনার ভিডিও লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
 
-# ----------------- Start Services ----------------- #
+# ----------------- Start Application ----------------- #
 
 async def web_app():
     app = web.Application()
