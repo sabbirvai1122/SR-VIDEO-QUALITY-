@@ -17,15 +17,6 @@ PORT = int(os.environ.get("PORT", "8080"))
 
 CHANNEL_LINK = "https://t.me/ss_anime_box"
 
-# memory session ব্যবহার করা হয়েছে যাতে কোনো ফাইল লকিং বা ইনপুট প্রম্পট না আসে
-app = Client(
-    name="bot_session",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-    in_memory=True
-)
-
 # ----------------- Helper Functions ----------------- #
 
 def clean_and_encode_filename(file_name: str) -> str:
@@ -53,6 +44,7 @@ async def root_route(request):
 
 @routes.get("/watch/{chat_id}/{message_id}/{file_name}")
 async def stream_handler(request):
+    app = request.app['bot_client']
     chat_id = int(request.match_info['chat_id'])
     message_id = int(request.match_info['message_id'])
     
@@ -99,6 +91,7 @@ async def stream_handler(request):
 
 @routes.get("/download/{chat_id}/{message_id}/{file_name}")
 async def download_handler(request):
+    app = request.app['bot_client']
     chat_id = int(request.match_info['chat_id'])
     message_id = int(request.match_info['message_id'])
     
@@ -122,46 +115,57 @@ async def download_handler(request):
         
     return response
 
-# ----------------- Telegram Handlers ----------------- #
-
-@app.on_message(filters.command("start") & filters.private)
-async def start_handler(bot, message: Message):
-    reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
-    ])
-    await message.reply_text(
-        "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
-        "আমাকে যেকোনো ফাইল পাঠান, আমি সরাসরি লিংক বানিয়ে দেব।",
-        reply_markup=reply_markup
-    )
-
-@app.on_message(filters.private & (filters.document | filters.video | filters.audio))
-async def media_handler(bot, message: Message):
-    media = message.document or message.video or message.audio
-    original_name = getattr(media, 'file_name', 'video.mp4')
-    safe_name = clean_and_encode_filename(original_name)
-    
-    watch_link = f"{URL}/watch/{message.chat.id}/{message.id}/{safe_name}"
-    download_link = f"{URL}/download/{message.chat.id}/{message.id}/{safe_name}"
-    
-    reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
-        [InlineKeyboardButton("Direct Download 📥", url=download_link)],
-        [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
-    ])
-    
-    await message.reply_text(f"**ফাইল নাম:** `{original_name}`\n\nআপনার লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
-
 # ----------------- Main Execution ----------------- #
 
 async def main():
+    # Hydrogram Client-কে event loop তৈরি হওয়ার পর ইনিশিয়ালাইজ করা হচ্ছে
+    app = Client(
+        name="bot_session",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        bot_token=BOT_TOKEN,
+        in_memory=True
+    )
+
+    @app.on_message(filters.command("start") & filters.private)
+    async def start_handler(bot, message: Message):
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
+        ])
+        await message.reply_text(
+            "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
+            "আমাকে যেকোনো ফাইল পাঠান, আমি সরাসরি লিংক বানিয়ে দেব।",
+            reply_markup=reply_markup
+        )
+
+    @app.on_message(filters.private & (filters.document | filters.video | filters.audio))
+    async def media_handler(bot, message: Message):
+        media = message.document or message.video or message.audio
+        original_name = getattr(media, 'file_name', 'video.mp4')
+        safe_name = clean_and_encode_filename(original_name)
+        
+        watch_link = f"{URL}/watch/{message.chat.id}/{message.id}/{safe_name}"
+        download_link = f"{URL}/download/{message.chat.id}/{message.id}/{safe_name}"
+        
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
+            [InlineKeyboardButton("Direct Download 📥", url=download_link)],
+            [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
+        ])
+        
+        await message.reply_text(f"**ফাইল নাম:** `{original_name}`\n\nআপনার লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
+
     await app.start()
+    
     web_app = web.Application()
+    web_app['bot_client'] = app
     web_app.add_routes(routes)
+    
     runner = web.AppRunner(web_app)
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
+    
     print("Bot & Web Server Started Successfully!")
     await asyncio.Event().wait()
 
