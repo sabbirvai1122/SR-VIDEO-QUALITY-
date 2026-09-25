@@ -10,10 +10,15 @@ from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton
 
 API_ID = int(os.environ.get("API_ID", "29608422"))
 API_HASH = os.environ.get("API_HASH", "3db2f8e109301f02f5d9c8f10dd79244")
-BOT_TOKEN = os.environ.get("BOT_TOKEN", "8227731967:AAEmgSiywxmGfe1GYhj9RSqaOtMvaAgS99k")
+
+# Updated Bot Token
+BOT_TOKEN = os.environ.get("BOT_TOKEN", "8765885559:AAGepuq7edjdkX1dnocii3EfUFiLGX1v9IA")
 
 URL = os.environ.get("URL", "https://sr-video-quality-2.onrender.com").rstrip('/')
 PORT = int(os.environ.get("PORT", "8080"))
+
+# Channel Link
+CHANNEL_LINK = "https://t.me/ss_anime_box"
 
 app = Client("StreamBot", api_id=API_ID, api_hash=API_HASH, bot_token=BOT_TOKEN)
 
@@ -117,9 +122,13 @@ async def download_handler(request):
 
 @app.on_message(filters.command("start") & filters.private)
 async def start_handler(bot, message: Message):
+    reply_markup = InlineKeyboardMarkup([
+        [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
+    ])
     await message.reply_text(
         "👋 **হ্যালো! আমি আপনার স্ট্রিমিং বট।**\n\n"
-        "আমাকে যেকোনো ভিডিও, অডিও বা ফাইল পাঠান, আমি সাথে সাথেই ওয়াচ ও সরাসরি ডাউনলোডের লিংক তৈরি করে দেব।"
+        "আমাকে যেকোনো ভিডিও, অডিও বা ফাইল পাঠান—আমি সাথে সাথেই ওয়াচ এবং ডাউনলোডের লিংক তৈরি করে দেব।",
+        reply_markup=reply_markup
     )
 
 @app.on_message(filters.private & (filters.document | filters.video | filters.audio))
@@ -133,10 +142,11 @@ async def media_handler(bot, message: Message):
     
     reply_markup = InlineKeyboardMarkup([
         [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
-        [InlineKeyboardButton("Direct Download 📥", url=download_link)]
+        [InlineKeyboardButton("Direct Download 📥", url=download_link)],
+        [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
     ])
     
-    await message.reply_text(f"**File Name:** `{original_name}`\n\nলিংক তৈরি হয়েছে:", reply_markup=reply_markup)
+    await message.reply_text(f"**File Name:** `{original_name}`\n\nআপনার লিংক তৈরি হয়ে গেছে:", reply_markup=reply_markup)
 
 # ----------------- Start Services ----------------- #
 
@@ -149,7 +159,7 @@ async def main():
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
     
-    print("Bot & Web Server running successfully!")
+    print("Bot running successfully!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
