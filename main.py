@@ -77,7 +77,7 @@ def humanbytes(size):
 
 # ----------------- Web Routes & Clean Player ----------------- #
 
-@app.get("/", response_class=HTMLResponse)
+@app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def root():
     return "<h1>SS Anime Box Web Server Active!</h1>"
 
@@ -92,7 +92,6 @@ async def watch_player(chat_id: int, message_id: int, file_name: str):
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>SS Anime Box Player</title>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
         <style>
             * {{ box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }}
             body {{ background-color: #0b0f19; color: #ffffff; display: flex; justify-content: center; align-items: flex-start; min-height: 100vh; }}
@@ -196,43 +195,59 @@ async def start_cmd(client, message: Message):
 @bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
 async def handle_media(client, message: Message):
     try:
-        bin_msg = await message.forward(BIN_CHANNEL)
-    except Exception:
-        bin_msg = message
+        # Try to forward to BIN CHANNEL
+        try:
+            bin_msg = await message.forward(BIN_CHANNEL)
+            target_chat_id = BIN_CHANNEL
+            target_msg_id = bin_msg.id
+        except Exception:
+            # If BIN_CHANNEL forwarding fails, use current chat message directly
+            target_chat_id = message.chat.id
+            target_msg_id = message.id
 
-    media = bin_msg.document or bin_msg.video or bin_msg.audio
-    original_name = getattr(media, 'file_name', 'video.mp4')
-    safe_name = clean_and_encode_filename(original_name)
-    file_size = humanbytes(getattr(media, 'file_size', 0))
-    file_ext = original_name.rsplit('.', 1)[-1].upper() if '.' in original_name else "MP4"
+        media = message.document or message.video or message.audio
+        
+        # Get filename safely
+        original_name = getattr(media, 'file_name', None)
+        if not original_name:
+            original_name = f"video_{message.id}.mp4"
+            
+        safe_name = clean_and_encode_filename(original_name)
+        file_size = humanbytes(getattr(media, 'file_size', 0))
+        file_ext = original_name.rsplit('.', 1)[-1].upper() if '.' in original_name else "MP4"
 
-    if file_ext in ["MP4", "WEBM"]:
-        stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
-    else:
-        stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (VLC/MX Player ব্যবহার করুন)"
+        if file_ext in ["MP4", "WEBM", "MKV"]:
+            stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
+        else:
+            stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (VLC Player ব্যবহার করুন)"
 
-    watch_link = f"{URL}/watch/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
-    download_link = f"{URL}/download/{BIN_CHANNEL}/{bin_msg.id}/{safe_name}"
+        watch_link = f"{URL}/watch/{target_chat_id}/{target_msg_id}/{safe_name}"
+        download_link = f"{URL}/download/{target_chat_id}/{target_msg_id}/{safe_name}"
 
-    reply_markup = InlineKeyboardMarkup([
-        [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
-        [InlineKeyboardButton("Direct Download 📥", url=download_link)],
-        [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{bin_msg.id}")],
-        [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
-    ])
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
+            [InlineKeyboardButton("Direct Download 📥", url=download_link)],
+            [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{target_chat_id}_{target_msg_id}")],
+            [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
+        ])
 
-    caption = (
-        f"📁 **ফাইল নাম:** `{original_name}`\n"
-        f"🏷 **টাইপ:** `{file_ext}` | 📦 **সাইজ:** `{file_size}`\n"
-        f"📌 **স্ট্যাটাস:** {stream_status}\n\n"
-        f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
-    )
-    await message.reply_text(caption, reply_markup=reply_markup)
+        caption = (
+            f"📁 **ফাইল নাম:** `{original_name}`\n"
+            f"🏷 **টাইপ:** `{file_ext}` | 📦 **সাইজ:** `{file_size}`\n"
+            f"📌 **স্ট্যাটাস:** {stream_status}\n\n"
+            f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
+        )
+        await message.reply_text(caption, reply_markup=reply_markup)
+
+    except Exception as e:
+        await message.reply_text(f"❌ লিংক তৈরিতে সমস্যা হয়েছে: `{str(e)}`")
 
 @bot.on_callback_query(filters.regex(r"^rename_"))
 async def rename_callback(client, query: CallbackQuery):
-    msg_id = int(query.data.split("_")[1])
-    rename_state[query.from_user.id] = msg_id
+    data_parts = query.data.split("_")
+    chat_id = int(data_parts[1])
+    msg_id = int(data_parts[2])
+    rename_state[query.from_user.id] = (chat_id, msg_id)
     await query.message.reply_text("✏️ **নতুন ফাইলের নাম পাঠান (যেমন: `Anime_S01E01.mp4`):**")
     await query.answer()
 
@@ -240,28 +255,28 @@ async def rename_callback(client, query: CallbackQuery):
 async def process_rename(client, message: Message):
     user_id = message.from_user.id
     if user_id in rename_state:
-        bin_msg_id = rename_state.pop(user_id)
+        chat_id, bin_msg_id = rename_state.pop(user_id)
         new_name = message.text.strip()
         
         try:
-            bin_msg = await bot.get_messages(BIN_CHANNEL, bin_msg_id)
+            bin_msg = await bot.get_messages(chat_id, bin_msg_id)
             media = bin_msg.document or bin_msg.video or bin_msg.audio
             safe_name = clean_and_encode_filename(new_name)
             file_size = humanbytes(getattr(media, 'file_size', 0))
             file_ext = new_name.rsplit('.', 1)[-1].upper() if '.' in new_name else "MP4"
             
-            if file_ext in ["MP4", "WEBM"]:
+            if file_ext in ["MP4", "WEBM", "MKV"]:
                 stream_status = "✅ **ব্রাউজারে সরাসরি চলবে**"
             else:
-                stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (VLC/MX Player ব্যবহার করুন)"
+                stream_status = "⚠️ **ব্রাউজারে সরাসরি চলবে না** (VLC Player ব্যবহার করুন)"
 
-            watch_link = f"{URL}/watch/{BIN_CHANNEL}/{bin_msg_id}/{safe_name}"
-            download_link = f"{URL}/download/{BIN_CHANNEL}/{bin_msg_id}/{safe_name}"
+            watch_link = f"{URL}/watch/{chat_id}/{bin_msg_id}/{safe_name}"
+            download_link = f"{URL}/download/{chat_id}/{bin_msg_id}/{safe_name}"
             
             reply_markup = InlineKeyboardMarkup([
                 [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
                 [InlineKeyboardButton("Direct Download 📥", url=download_link)],
-                [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{bin_msg_id}")],
+                [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{chat_id}_{bin_msg_id}")],
                 [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
             ])
             
