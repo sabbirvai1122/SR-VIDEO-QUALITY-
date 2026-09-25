@@ -17,13 +17,13 @@ PORT = int(os.environ.get("PORT", "8080"))
 
 CHANNEL_LINK = "https://t.me/ss_anime_box"
 
-# plugins=dict(root="") দিয়ে বাইরের সমস্ত ফোল্ডারের ForceSub ফাইল পুরোপুরি নিষ্ক্রিয় করা হলো
+# memory session ব্যবহার করা হয়েছে যাতে সেশন ফাইল লকিং এরর না হয়
 app = Client(
     "StreamBotSession",
     api_id=API_ID,
     api_hash=API_HASH,
     bot_token=BOT_TOKEN,
-    plugins=dict(root="")
+    in_memory=True
 )
 
 # ----------------- Helper Functions ----------------- #
@@ -154,7 +154,7 @@ async def media_handler(bot, message: Message):
 
 # ----------------- Start Services ----------------- #
 
-async def main():
+async def start_services():
     await app.start()
     web_app = web.Application()
     web_app.add_routes(routes)
@@ -162,9 +162,9 @@ async def main():
     await runner.setup()
     site = web.TCPSite(runner, "0.0.0.0", PORT)
     await site.start()
-    
-    print("Bot running successfully!")
+    print("Bot is Live and Running!")
     await asyncio.Event().wait()
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(start_services())
