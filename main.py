@@ -56,7 +56,7 @@ def check_streamable(file_name: str, mime_type: str = ""):
     if ext in [".mp4", ".m4v"]:
         return True, "✅ আপনি এই ভিডিওটি সরাসরি দেখতে এবং ডাউনলোড করতে পারবেন।"
     elif ext in [".mkv", ".avi", ".flv", ".wmv", ".webm"]:
-        return False, f"⚠️ আপনি এই ভিডিওটি প্লেয়ারে সরাসরি দেখতে পারবেন না (কারণ: {ext.upper()} ফরম্যাট সাধারণ ব্রাউজারে সাপোর্ট করে না)। তবে আপনি এটি সরাসরি ডাউনলোড করতে পারবেন।"
+        return False, f"⚠️ আপনি এই ভিডিওটি প্লেয়ারে সরাসরি দেখতে পারবেন না (কারণ: {ext.upper()} ফরম্যাট ব্রাউজারে স্ট্রিম সাপোর্ট করে না)। তবে আপনি এটি ডাউনলোড করে দেখতে পারবেন।"
     else:
         return True, "✅ আপনি এই ভিডিওটি দেখতে এবং ডাউনলোড করতে পারবেন।"
 
@@ -102,7 +102,6 @@ async def watch_player(
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
         <title>SS Anime Box Player</title>
-        <link rel="stylesheet" href="https://cdn.plyr.io/3.7.8/plyr.css" />
         <style>
             * {{ box-sizing: border-box; margin: 0; padding: 0; user-select: none; }}
             html, body {{
@@ -130,6 +129,36 @@ async def watch_player(
             video {{
                 width: 100%;
                 height: 100%;
+                object-fit: contain;
+                display: block;
+                outline: none;
+            }}
+
+            .center-play-btn {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 60px;
+                height: 60px;
+                background: rgba(0, 0, 0, 0.6);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                z-index: 30;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                pointer-events: auto;
+            }}
+            .center-play-btn svg {{
+                width: 30px;
+                height: 30px;
+                fill: #ffffff;
+            }}
+            .video-wrapper:hover .center-play-btn, .video-wrapper:active .center-play-btn {{
+                opacity: 1;
             }}
 
             .hud-overlay {{
@@ -233,9 +262,13 @@ async def watch_player(
     <body>
 
         <div class="video-wrapper" id="wrapper">
-            <video id="player" playsinline controls preload="auto">
+            <video id="player" controls autoplay playsinline preload="metadata">
                 <source id="videoSource" src="{default_stream_url}" type="video/mp4">
             </video>
+
+            <div class="center-play-btn" id="centerPlayBtn" onclick="togglePlayPause()">
+                <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </div>
 
             <div id="volume-hud" class="hud-overlay">
                 <div class="hud-icon">🔊</div>
@@ -253,7 +286,7 @@ async def watch_player(
 
             <div class="custom-quality-box">
                 <svg class="gear-icon" viewBox="0 0 24 24" fill="#ffffff">
-                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6-3.6z"/>
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
                 </svg>
                 <select class="quality-select" id="qualitySelector" onchange="changeQuality(this.value)">
                     {quality_options_html}
@@ -266,33 +299,48 @@ async def watch_player(
             <p>High Quality Video Player</p>
         </div>
 
-        <script src="https://cdn.plyr.io/3.7.8/plyr.js"></script>
         <script>
-            const plyrPlayer = new Plyr('#player', {{
-                controls: ['play-large', 'play', 'progress', 'current-time', 'mute', 'volume', 'fullscreen'],
-                seekTime: 10
-            }});
-
+            const video = document.getElementById('player');
             const wrapper = document.getElementById('wrapper');
+            const playIcon = document.getElementById('playIcon');
+            
             const volumeHud = document.getElementById('volume-hud');
             const volumeFill = document.getElementById('volume-fill');
+            
             const brightnessHud = document.getElementById('brightness-hud');
             const brightnessFill = document.getElementById('brightness-fill');
 
+            function togglePlayPause() {{
+                if (video.paused) {{
+                    video.play();
+                }} else {{
+                    video.pause();
+                }}
+            }}
+
+            video.addEventListener('play', () => {{
+                playIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+            }});
+
+            video.addEventListener('pause', () => {{
+                playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+            }});
+
             function changeQuality(newUrl) {{
                 if (!newUrl) return;
-                const currentTime = plyrPlayer.currentTime;
-                const isPlaying = plyrPlayer.isPlaying;
+                const currentTime = video.currentTime;
+                const isPlaying = !video.paused;
 
-                plyrPlayer.source = {{
-                    type: 'video',
-                    sources: [{{ src: newUrl, type: 'video/mp4' }}]
+                const source = document.getElementById('videoSource');
+                source.src = newUrl;
+                video.load();
+
+                video.onloadeddata = function() {{
+                    video.currentTime = currentTime;
+                    if (isPlaying) {{
+                        video.play().catch(e => console.log(e));
+                    }}
                 }};
-                
-                plyrPlayer.once('ready', () => {{
-                    plyrPlayer.currentTime = currentTime;
-                    if (isPlaying) plyrPlayer.play();
-                }});
             }}
 
             let currentBrightness = 100;
@@ -302,7 +350,7 @@ async def watch_player(
             let isSwipingRight = false;
 
             wrapper.addEventListener('touchstart', (e) => {{
-                if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
+                if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION' || e.target.id === 'centerPlayBtn' || e.target.closest('#centerPlayBtn')) return;
                 if (e.touches.length === 1) {{
                     startY = e.touches[0].clientY;
                     const screenWidth = window.innerWidth;
@@ -313,7 +361,7 @@ async def watch_player(
                     }} else {{
                         isSwipingRight = true;
                         isSwipingLeft = false;
-                        startVal = plyrPlayer.volume * 100;
+                        startVal = video.volume * 100;
                     }}
                 }}
             }}, {{ passive: true }});
@@ -334,7 +382,7 @@ async def watch_player(
                     brightnessHud.style.display = 'flex';
                 }} else if (isSwipingRight) {{
                     let newV = Math.min(Math.max(startVal + change, 0), 100);
-                    plyrPlayer.volume = newV / 100;
+                    video.volume = newV / 100;
                     
                     volumeFill.style.width = newV + '%';
                     volumeHud.style.display = 'flex';
@@ -380,7 +428,9 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
     disposition_type = "attachment" if is_download else "inline"
 
     if range_header:
-        byte_opts = range_header.replace('bytes=', '').split('-')
+        range_value = range_header.strip().lower().replace('bytes=', '')
+        byte_opts = range_value.split('-')
+        
         start = int(byte_opts[0]) if byte_opts[0] else 0
         end = int(byte_opts[1]) if len(byte_opts) > 1 and byte_opts[1] else file_size - 1
         
@@ -441,7 +491,7 @@ async def main():
             "`/combine <480p_ID> <720p_ID> <1080p_ID> <custom_filename>`\n"
             "*(উদাহরন: `/combine 80 81 82 Episode_01.mp4`)*\n\n"
             "🗑 **লিংক বা ফাইল ডিলিট করার নিয়ম:**\n"
-            "চ্যাটে `/del <Message_ID>` লিখে পাঠালে লিংক রিমুভ হয়ে যাবে।"
+            "চ্যাটে `/del <Message_ID>` লিখে পাঠাল লিংক রিমুভ হয়ে যাবে।"
         )
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
