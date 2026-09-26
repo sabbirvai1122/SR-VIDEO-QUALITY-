@@ -2,12 +2,12 @@ import os
 import re
 import uvicorn
 import asyncio
-from urllib.parse import quote
+from urllib.parse import quote, unquote
 from fastapi import FastAPI, Request, HTTPException
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi.middleware.cors import CORSMiddleware
 from hydrogram import Client, filters
-from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery
+from hydrogram.types import Message, InlineKeyboardMarkup, InlineKeyboardButton, CallbackQuery, BotCommand
 
 # ----------------- Configuration ----------------- #
 
@@ -76,9 +76,7 @@ async def watch_player(
 ):
     default_stream_url = f"{URL}/stream/{chat_id}/{message_id}/{file_name}"
     
-    # Building Quality Dropdown HTML
     options_list = []
-    
     if q480 and q480.lower() != "none":
         url_480 = f"{URL}/stream/{BIN_CHANNEL}/{q480}/{file_name}"
         options_list.append(f'<option value="{url_480}">480p</option>')
@@ -91,15 +89,14 @@ async def watch_player(
         url_1080 = f"{URL}/stream/{BIN_CHANNEL}/{q1080}/{file_name}"
         options_list.append(f'<option value="{url_1080}">1080p</option>')
 
-    # Fallback when no URL parameter is passed
     if not options_list:
-        options_list.append(f'<option value="{default_stream_url}">Default Quality</option>')
+        options_list.append(f'<option value="{default_stream_url}">Quality Option</option>')
 
     quality_options_html = "\n".join(options_list)
 
     html_content = f"""
     <!DOCTYPE html>
-    <html lang="en">
+    <html lang="bn">
     <head>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
@@ -119,7 +116,6 @@ async def watch_player(
                 overflow-x: hidden;
             }}
             
-            /* Responsive Aspect Ratio Fixed Container */
             .video-wrapper {{
                 position: relative;
                 width: 100%;
@@ -137,42 +133,50 @@ async def watch_player(
                 outline: none;
             }}
 
-            .controls-bar {{
+            /* Bottom Embedded Quality Selector Bar */
+            .bottom-control-bar {{
                 position: absolute;
-                top: 12px;
-                right: 12px;
+                bottom: 12px;
+                right: 15px;
                 z-index: 30;
+                display: flex;
+                align-items: center;
+                gap: 6px;
+                background: rgba(0, 0, 0, 0.6);
+                padding: 4px 8px;
+                border-radius: 6px;
+                backdrop-filter: blur(4px);
             }}
 
             .quality-select {{
-                background: rgba(0, 0, 0, 0.85);
+                background: rgba(20, 20, 20, 0.9);
                 color: #ff9900;
-                border: 1.5px solid #ff9900;
-                padding: 6px 12px;
-                font-size: 13px;
+                border: 1px solid #ff9900;
+                padding: 3px 8px;
+                font-size: 11px;
                 font-weight: bold;
-                border-radius: 6px;
+                border-radius: 4px;
                 outline: none;
                 cursor: pointer;
             }}
 
             .card {{
-                margin-top: 20px;
-                padding: 16px;
+                margin-top: 15px;
+                padding: 14px;
                 background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
                 border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 16px;
+                border-radius: 12px;
                 text-align: center;
                 width: calc(100% - 30px);
                 max-width: 450px;
             }}
             .card h2 {{
-                font-size: 18px;
+                font-size: 16px;
                 color: #ff9900;
-                margin-bottom: 4px;
+                margin-bottom: 2px;
             }}
             .card p {{
-                font-size: 13px;
+                font-size: 12px;
                 color: #9aa0a6;
             }}
 
@@ -180,10 +184,10 @@ async def watch_player(
                 position: absolute;
                 top: 50%;
                 transform: translateY(-50%);
-                padding: 8px 14px;
+                padding: 6px 12px;
                 background: rgba(0, 0, 0, 0.8);
                 color: #fff;
-                font-size: 13px;
+                font-size: 12px;
                 border-radius: 6px;
                 display: none;
                 z-index: 20;
@@ -196,15 +200,16 @@ async def watch_player(
     <body>
 
         <div class="video-wrapper" id="wrapper">
-            <div class="controls-bar">
+            <video id="player" controls autoplay playsinline preload="metadata">
+                <source id="videoSource" src="{default_stream_url}" type="video/mp4">
+            </video>
+
+            <div class="bottom-control-bar">
+                <span style="font-size: 10px; color: #aaa;">QUAL:</span>
                 <select class="quality-select" id="qualitySelector" onchange="changeQuality(this.value)">
                     {quality_options_html}
                 </select>
             </div>
-
-            <video id="player" controls autoplay playsinline preload="metadata">
-                <source id="videoSource" src="{default_stream_url}" type="video/mp4">
-            </video>
 
             <div id="left-indicator" class="overlay-indicator">Brightness: <span id="b-val">100</span>%</div>
             <div id="right-indicator" class="overlay-indicator">Volume: <span id="v-val">100</span>%</div>
@@ -212,7 +217,7 @@ async def watch_player(
 
         <div class="card">
             <h2>SS ANIME BOX</h2>
-            <p>High Quality Streaming Player</p>
+            <p>High Quality Player</p>
         </div>
 
         <script>
@@ -316,6 +321,8 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
 
     file_size = media.file_size
     range_header = request.headers.get('range')
+    
+    decoded_filename = unquote(file_name)
     disposition_type = "attachment" if is_download else "inline"
 
     if range_header:
@@ -338,7 +345,7 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
             'Accept-Ranges': 'bytes',
             'Content-Length': str(content_length),
             'Content-Type': 'video/mp4',
-            'Content-Disposition': f'{disposition_type}; filename="{file_name}"'
+            'Content-Disposition': f'{disposition_type}; filename="{decoded_filename}"'
         }
         return StreamingResponse(fast_ranged_streamer(), status_code=206, headers=headers)
 
@@ -351,7 +358,7 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
             'Accept-Ranges': 'bytes',
             'Content-Length': str(file_size),
             'Content-Type': 'video/mp4',
-            'Content-Disposition': f'{disposition_type}; filename="{file_name}"'
+            'Content-Disposition': f'{disposition_type}; filename="{decoded_filename}"'
         }
         return StreamingResponse(fast_full_streamer(), status_code=200, headers=headers)
 
@@ -372,49 +379,59 @@ async def main():
     @bot.on_message(filters.command("start") & filters.private)
     async def start_cmd(client, message: Message):
         start_msg = (
-            "👋 **SS Anime Box Bot Active!**\n\n"
-            "কোয়ালিটি যুক্ত করার কমান্ড ফরম্যাট:\n"
-            "`/combine <480p_id> <720p_id> <1080p_id> <filename>`\n\n"
-            "*(যদি কোন কোয়ালিটি না থাকে তবে সেখানে `none` লিখবেন)*"
+            "🚀 **Start the bot**\n\n"
+            "👋 **SS Anime Box Bot এ আপনাকে স্বাগতম!**\n\n"
+            "📌 **ব্যবহারের নিয়মাবলী:**\n"
+            "১. যেকোনো ফাইল পাঠান, লিংক সাথে সাথে পাবেন।\n"
+            "২. **মাল্টি-কোয়ালিটি (2/3 Quality) একত্র করার কমান্ড:**\n"
+            "`/combine <480p_ID> <720p_ID> <1080p_ID> <custom_filename>`\n"
+            "*(উদাহরন: `/combine 80 81 82 1.mp4`)*\n\n"
+            "🗑 **লিংক মুছে ফেলার নিয়ম:**\n"
+            "লিংক মেসেজের সাথে থাকা **Delete Link** বোতামে চাপুন।"
         )
-        await message.reply_text(start_msg)
+        reply_markup = InlineKeyboardMarkup([
+            [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
+        ])
+        await message.reply_text(start_msg, reply_markup=reply_markup)
 
     @bot.on_message(filters.command("combine") & filters.private)
     async def combine_qualities(client, message: Message):
         try:
             args = message.text.split(maxsplit=4)
             if len(args) < 5:
-                await message.reply_text("❌ ফরম্যাট সঠিক নয়!\nব্যবহার: `/combine <480p_id> <720p_id> <1080p_id> <filename>`")
+                await message.reply_text("❌ ফরম্যাট সঠিক নয়!\nব্যবহার করুন: `/combine <480p_id> <720p_id> <1080p_id> <custom_filename>`")
                 return
 
             id_480 = args[1]
             id_720 = args[2]
             id_1080 = args[3]
-            filename = clean_and_encode_filename(args[4])
+            custom_filename = clean_and_encode_filename(args[4])
+            display_name = unquote(custom_filename)
 
-            # Multi-quality player link
-            multi_watch_url = f"{URL}/watch/{BIN_CHANNEL}/{id_480}/{filename}?q480={id_480}&q720={id_720}&q1080={id_1080}"
+            multi_watch_url = f"{URL}/watch/{BIN_CHANNEL}/{id_480}/{custom_filename}?q480={id_480}&q720={id_720}&q1080={id_1080}"
             
             keyboard_buttons = [
                 [InlineKeyboardButton("Watch Online 🎬", url=multi_watch_url)]
             ]
 
             if id_480.lower() != "none":
-                dl_480 = f"{URL}/download/{BIN_CHANNEL}/{id_480}/{filename}"
-                keyboard_buttons.append([InlineKeyboardButton("Direct Download (480p) 📥", url=dl_480)])
+                dl_480 = f"{URL}/download/{BIN_CHANNEL}/{id_480}/{custom_filename}"
+                keyboard_buttons.append([InlineKeyboardButton(f"Direct Download (480p) 📥", url=dl_480)])
 
             if id_720.lower() != "none":
-                dl_720 = f"{URL}/download/{BIN_CHANNEL}/{id_720}/{filename}"
-                keyboard_buttons.append([InlineKeyboardButton("Direct Download (720p) 📥", url=dl_720)])
+                dl_720 = f"{URL}/download/{BIN_CHANNEL}/{id_720}/{custom_filename}"
+                keyboard_buttons.append([InlineKeyboardButton(f"Direct Download (720p) 📥", url=dl_720)])
 
             if id_1080.lower() != "none":
-                dl_1080 = f"{URL}/download/{BIN_CHANNEL}/{id_1080}/{filename}"
-                keyboard_buttons.append([InlineKeyboardButton("Direct Download (1080p) 📥", url=dl_1080)])
+                dl_1080 = f"{URL}/download/{BIN_CHANNEL}/{id_1080}/{custom_filename}"
+                keyboard_buttons.append([InlineKeyboardButton(f"Direct Download (1080p) 📥", url=dl_1080)])
 
-            keyboard_buttons.append([InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)])
+            keyboard_buttons.append([InlineKeyboardButton("Delete Link 🗑", callback_data="delete_msg")])
+            keyboard_buttons.append([InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)])
 
             await message.reply_text(
-                "✅ **মাল্টি-কোয়ালিটি স্ট্রিম এবং ডাইরেক্ট ডাউনলোড লিংক তৈরি হয়েছে!**", 
+                f"📂 **ফাইল নাম:** `{display_name}`\n\n"
+                "✅ **মাল্টি-কোয়ালিটি লিংক তৈরি করা হয়েছে!**", 
                 reply_markup=InlineKeyboardMarkup(keyboard_buttons)
             )
 
@@ -432,7 +449,7 @@ async def main():
                 InlineKeyboardButton("1080p 🎬", callback_data="qual_1080")
             ]
         ])
-        await message.reply_text("📌 **এই ফাইলটির কোয়ালিটি (Quality) নির্বাচন করুন:**", reply_markup=keyboard)
+        await message.reply_text("📌 **ফাইলটির কোয়ালিটি চয়ন করুন:**", reply_markup=keyboard)
 
     @bot.on_callback_query(filters.regex("^qual_"))
     async def handle_quality_choice(client, callback: CallbackQuery):
@@ -440,7 +457,7 @@ async def main():
         user_id = callback.from_user.id
 
         if user_id not in user_file_cache:
-            await callback.answer("⚠️ ফাইল খুঁজে পাওয়া যায়নি! আবার ফাইল পাঠান।", show_alert=True)
+            await callback.answer("⚠️ ফাইল খুঁজে পাওয়া যায়নি! আবার পাঠান।", show_alert=True)
             return
 
         message = user_file_cache[user_id]
@@ -465,7 +482,8 @@ async def main():
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Watch Online ({quality}p) 🎬", url=watch_link)],
             [InlineKeyboardButton(f"Direct Download ({quality}p) 📥", url=download_link)],
-            [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
+            [InlineKeyboardButton("Delete Link 🗑", callback_data="delete_msg")],
+            [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
         ])
 
         caption = (
@@ -477,8 +495,29 @@ async def main():
 
         await callback.message.edit_text(caption, reply_markup=reply_markup)
 
+    @bot.on_callback_query(filters.regex("^delete_msg$"))
+    async def handle_delete_callback(client, callback: CallbackQuery):
+        try:
+            await callback.message.delete()
+            await callback.answer("🗑 লিংক ও মেসেজ মুছে ফেলা হয়েছে!", show_alert=True)
+        except Exception:
+            await callback.answer("❌ মুছে ফেলা সম্ভব হয়নি।", show_alert=True)
+
     await bot.start()
-    
+
+    # --------------- Set Bot Menu Commands --------------- #
+    await bot.set_bot_commands([
+        BotCommand("start", "🚀 Start the bot"),
+        BotCommand("combine", "📂 Combine Multiple Qualities"),
+        BotCommand("del", "🗑 Delete Your File"),
+        BotCommand("files", "📁 Check Your All Files"),
+        BotCommand("help", "🚀 Get Help"),
+        BotCommand("about", "⁉️ Why? 😑"),
+        BotCommand("ban", "📑 [Admin Only]"),
+        BotCommand("unban", "📑 [Admin Only]"),
+        BotCommand("status", "📊 [Admin Only]")
+    ])
+
     config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
     server = uvicorn.Server(config)
     
