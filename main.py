@@ -40,16 +40,7 @@ app.add_middleware(
 def clean_and_encode_filename(file_name: str) -> str:
     if not file_name:
         return "video.mp4"
-    clean_name = re.sub(r'\[.*?\]|\(.*?\)', '', file_name)
-    if '.' in clean_name:
-        name_part, ext_part = clean_name.rsplit('.', 1)
-        ext = ext_part.lower()
-    else:
-        name_part = clean_name
-        ext = "mp4"
-    name_part = re.sub(r'[^a-zA-Z0-9.-]', '_', name_part)
-    name_part = re.sub(r'_+', '_', name_part).strip('_')
-    return quote(f"{name_part}.{ext}")
+    return quote(file_name)
 
 def humanbytes(size):
     if not size:
@@ -90,7 +81,7 @@ async def watch_player(
         options_list.append(f'<option value="{url_1080}">1080p</option>')
 
     if not options_list:
-        options_list.append(f'<option value="{default_stream_url}">Quality Option</option>')
+        options_list.append(f'<option value="{default_stream_url}">Auto Quality</option>')
 
     quality_options_html = "\n".join(options_list)
 
@@ -106,20 +97,20 @@ async def watch_player(
             html, body {{
                 width: 100%;
                 height: 100%;
-                background-color: #0b0f19;
+                background-color: #000000;
                 color: #ffffff;
                 font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
                 justify-content: flex-start;
-                overflow-x: hidden;
+                overflow: hidden;
             }}
             
             .video-wrapper {{
                 position: relative;
                 width: 100%;
-                max-width: 850px;
+                max-width: 900px;
                 aspect-ratio: 16 / 9;
                 background-color: #000;
                 overflow: hidden;
@@ -133,100 +124,154 @@ async def watch_player(
                 outline: none;
             }}
 
-            /* Bottom Embedded Quality Selector Bar */
-            .bottom-control-bar {{
+            /* Top HUD Progress Bars */
+            .hud-overlay {{
+                position: absolute;
+                top: 15%;
+                left: 50%;
+                transform: translateX(-50%);
+                display: none;
+                align-items: center;
+                gap: 12px;
+                width: 240px;
+                height: 42px;
+                background: rgba(20, 20, 20, 0.85);
+                border-radius: 20px;
+                padding: 0 16px;
+                backdrop-filter: blur(10px);
+                z-index: 50;
+                pointer-events: none;
+                box-shadow: 0 4px 15px rgba(0,0,0,0.6);
+            }}
+
+            .hud-icon {{
+                font-size: 18px;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+            }}
+
+            .hud-bar-container {{
+                flex: 1;
+                height: 10px;
+                background: rgba(255, 255, 255, 0.25);
+                border-radius: 5px;
+                overflow: hidden;
+            }}
+
+            .hud-bar-fill {{
+                height: 100%;
+                width: 50%;
+                border-radius: 5px;
+                transition: width 0.05s ease-out;
+            }}
+
+            #volume-hud .hud-bar-fill {{
+                background: #34c759;
+            }}
+
+            #brightness-hud .hud-bar-fill {{
+                background: #e5e5ea;
+            }}
+
+            /* Custom Quality UI Button next to Gear Icon */
+            .custom-quality-box {{
                 position: absolute;
                 bottom: 12px;
                 right: 15px;
-                z-index: 30;
+                z-index: 40;
                 display: flex;
                 align-items: center;
                 gap: 6px;
-                background: rgba(0, 0, 0, 0.6);
+                background: rgba(0, 0, 0, 0.75);
                 padding: 4px 8px;
                 border-radius: 6px;
-                backdrop-filter: blur(4px);
+                border: 1px solid rgba(255, 255, 255, 0.2);
+            }}
+
+            .gear-icon {{
+                width: 16px;
+                height: 16px;
             }}
 
             .quality-select {{
-                background: rgba(20, 20, 20, 0.9);
-                color: #ff9900;
-                border: 1px solid #ff9900;
-                padding: 3px 8px;
-                font-size: 11px;
-                font-weight: bold;
-                border-radius: 4px;
+                background: transparent;
+                color: #fff;
+                border: none;
+                font-size: 12px;
+                font-weight: 600;
                 outline: none;
                 cursor: pointer;
             }}
 
             .card {{
                 margin-top: 15px;
-                padding: 14px;
-                background: linear-gradient(135deg, rgba(255,255,255,0.05), rgba(255,255,255,0.02));
+                padding: 12px;
+                background: rgba(255, 255, 255, 0.05);
                 border: 1px solid rgba(255, 255, 255, 0.1);
-                border-radius: 12px;
+                border-radius: 10px;
                 text-align: center;
                 width: calc(100% - 30px);
                 max-width: 450px;
             }}
             .card h2 {{
-                font-size: 16px;
+                font-size: 15px;
                 color: #ff9900;
-                margin-bottom: 2px;
             }}
             .card p {{
-                font-size: 12px;
-                color: #9aa0a6;
+                font-size: 11px;
+                color: #aaa;
             }}
-
-            .overlay-indicator {{
-                position: absolute;
-                top: 50%;
-                transform: translateY(-50%);
-                padding: 6px 12px;
-                background: rgba(0, 0, 0, 0.8);
-                color: #fff;
-                font-size: 12px;
-                border-radius: 6px;
-                display: none;
-                z-index: 20;
-                pointer-events: none;
-            }}
-            #left-indicator {{ left: 15px; }}
-            #right-indicator {{ right: 15px; }}
         </style>
     </head>
     <body>
 
         <div class="video-wrapper" id="wrapper">
-            <video id="player" controls autoplay playsinline preload="metadata">
+            <video id="player" controls autoplay playsinline preload="auto">
                 <source id="videoSource" src="{default_stream_url}" type="video/mp4">
             </video>
 
-            <div class="bottom-control-bar">
-                <span style="font-size: 10px; color: #aaa;">QUAL:</span>
+            <!-- Volume Overlay Bar -->
+            <div id="volume-hud" class="hud-overlay">
+                <div class="hud-icon">🔊</div>
+                <div class="hud-bar-container">
+                    <div id="volume-fill" class="hud-bar-fill"></div>
+                </div>
+            </div>
+
+            <!-- Brightness Overlay Bar -->
+            <div id="brightness-hud" class="hud-overlay">
+                <div class="hud-icon">☀️</div>
+                <div class="hud-bar-container">
+                    <div id="brightness-fill" class="hud-bar-fill"></div>
+                </div>
+            </div>
+
+            <!-- Quality Option next to Gear Icon -->
+            <div class="custom-quality-box">
+                <svg class="gear-icon" viewBox="0 0 24 24" fill="#ffffff">
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                </svg>
                 <select class="quality-select" id="qualitySelector" onchange="changeQuality(this.value)">
                     {quality_options_html}
                 </select>
             </div>
-
-            <div id="left-indicator" class="overlay-indicator">Brightness: <span id="b-val">100</span>%</div>
-            <div id="right-indicator" class="overlay-indicator">Volume: <span id="v-val">100</span>%</div>
         </div>
 
         <div class="card">
             <h2>SS ANIME BOX</h2>
-            <p>High Quality Player</p>
+            <p>High Quality Video Player</p>
         </div>
 
         <script>
             const video = document.getElementById('player');
             const wrapper = document.getElementById('wrapper');
-            const leftInd = document.getElementById('left-indicator');
-            const rightInd = document.getElementById('right-indicator');
-            const bVal = document.getElementById('b-val');
-            const vVal = document.getElementById('v-val');
+            
+            const volumeHud = document.getElementById('volume-hud');
+            const volumeFill = document.getElementById('volume-fill');
+            
+            const brightnessHud = document.getElementById('brightness-hud');
+            const brightnessFill = document.getElementById('brightness-fill');
 
             function changeQuality(newUrl) {{
                 if (!newUrl) return;
@@ -277,21 +322,24 @@ async def watch_player(
                     let newB = Math.min(Math.max(startVal + change, 10), 200);
                     currentBrightness = newB;
                     wrapper.style.filter = `brightness(${{newB}}%)`;
-                    bVal.innerText = Math.round((newB / 200) * 100);
-                    leftInd.style.display = 'block';
+                    
+                    let percentage = (newB / 200) * 100;
+                    brightnessFill.style.width = percentage + '%';
+                    brightnessHud.style.display = 'flex';
                 }} else if (isSwipingRight) {{
                     let newV = Math.min(Math.max(startVal + change, 0), 100);
                     video.volume = newV / 100;
-                    vVal.innerText = Math.round(newV);
-                    rightInd.style.display = 'block';
+                    
+                    volumeFill.style.width = newV + '%';
+                    volumeHud.style.display = 'flex';
                 }}
             }}, {{ passive: true }});
 
             wrapper.addEventListener('touchend', () => {{
                 isSwipingLeft = false;
                 isSwipingRight = false;
-                leftInd.style.display = 'none';
-                rightInd.style.display = 'none';
+                brightnessHud.style.display = 'none';
+                volumeHud.style.display = 'none';
             }});
         </script>
     </body>
@@ -385,7 +433,7 @@ async def main():
             "১. যেকোনো ফাইল পাঠান, লিংক সাথে সাথে পাবেন।\n"
             "২. **মাল্টি-কোয়ালিটি (2/3 Quality) একত্র করার কমান্ড:**\n"
             "`/combine <480p_ID> <720p_ID> <1080p_ID> <custom_filename>`\n"
-            "*(উদাহরন: `/combine 80 81 82 1.mp4`)*\n\n"
+            "*(উদাহরন: `/combine 80 81 82 Episode_01.mp4`)*\n\n"
             "🗑 **লিংক মুছে ফেলার নিয়ম:**\n"
             "লিংক মেসেজের সাথে থাকা **Delete Link** বোতামে চাপুন।"
         )
