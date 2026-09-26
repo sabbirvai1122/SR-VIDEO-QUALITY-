@@ -1,6 +1,0 @@
-hydrogram
-tgcrypto
-fastapi
-uvicorn
-aiohttp
-
