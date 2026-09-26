@@ -1,5 +1,6 @@
 import os
 import re
+import mimetypes
 import uvicorn
 import asyncio
 from urllib.parse import quote, unquote
@@ -51,14 +52,18 @@ def humanbytes(size):
             return f"{size:.2f} {unit}"
         size /= 1024.0
 
-def check_streamable(file_name: str, mime_type: str = ""):
-    ext = os.path.splitext(file_name)[1].lower() if file_name else ""
-    if ext in [".mp4", ".m4v"]:
-        return True, "✅ আপনি এই ভিডিওটি সরাসরি দেখতে এবং ডাউনলোড করতে পারবেন।"
-    elif ext in [".mkv", ".avi", ".flv", ".wmv", ".webm"]:
-        return False, f"⚠️ আপনি এই ভিডিওটি প্লেয়ারে সরাসরি দেখতে পারবেন না (কারণ: {ext.upper()} ফরম্যাট সাপোর্ট করে না)। তবে ডাউনলোড করে দেখতে পারবেন।"
-    else:
-        return True, "✅ আপনি এই ভিডিওটি দেখতে এবং ডাউনলোড করতে পারবেন।"
+def get_media_mime_type(file_name: str, telegram_mime: str = "") -> str:
+    if telegram_mime and telegram_mime != "application/octet-stream":
+        return telegram_mime
+    mime, _ = mimetypes.guess_type(file_name)
+    if mime:
+        return mime
+    ext = os.path.splitext(file_name)[1].lower()
+    if ext == ".mkv":
+        return "video/x-matroska"
+    elif ext == ".webm":
+        return "video/webm"
+    return "video/mp4"
 
 # ----------------- Web Player Endpoint ----------------- #
 
@@ -94,6 +99,7 @@ async def watch_player(
         options_list.append(f'<option value="{default_stream_url}">Quality</option>')
 
     quality_options_html = "\n".join(options_list)
+    mime_type = get_media_mime_type(file_name)
 
     html_content = f"""
     <!DOCTYPE html>
@@ -124,7 +130,7 @@ async def watch_player(
                 aspect-ratio: 16 / 9;
                 background-color: #000;
                 overflow: hidden;
-                touch-action: none; /* স্ক্রিন নড়াচড়া বন্ধ করার জন্য */
+                touch-action: none;
             }}
 
             video {{
@@ -176,13 +182,8 @@ async def watch_player(
                 transition: width 0.05s ease-out;
             }}
 
-            #volume-hud .hud-bar-fill {{
-                background: #34c759;
-            }}
-
-            #brightness-hud .hud-bar-fill {{
-                background: #e5e5ea;
-            }}
+            #volume-hud .hud-bar-fill {{ background: #34c759; }}
+            #brightness-hud .hud-bar-fill {{ background: #e5e5ea; }}
 
             .custom-quality-box {{
                 position: absolute;
@@ -198,10 +199,7 @@ async def watch_player(
                 border: 1px solid rgba(255, 255, 255, 0.2);
             }}
 
-            .gear-icon {{
-                width: 18px;
-                height: 18px;
-            }}
+            .gear-icon {{ width: 18px; height: 18px; }}
 
             .quality-select {{
                 background: transparent;
@@ -223,22 +221,16 @@ async def watch_player(
                 width: calc(100% - 30px);
                 max-width: 450px;
             }}
-            .card h2 {{
-                font-size: 15px;
-                color: #ff9900;
-            }}
-            .card p {{
-                font-size: 11px;
-                color: #aaa;
-            }}
+            .card h2 {{ font-size: 15px; color: #ff9900; }}
+            .card p {{ font-size: 11px; color: #aaa; }}
         </style>
     </head>
     <body>
 
         <div class="video-wrapper" id="wrapper">
-            <!-- অরিজিনাল নেটিভ প্লেয়ার -->
-            <video id="player" controls autoplay playsinline preload="metadata">
-                <source id="videoSource" src="{default_stream_url}" type="video/mp4">
+            <video id="player" controls autoplay playsinline preload="auto">
+                <source id="videoSource" src="{default_stream_url}" type="{mime_type}">
+                আপনার ব্রাউজার এই ভিডিওটি সাপোর্ট করে না।
             </video>
 
             <div id="volume-hud" class="hud-overlay">
@@ -300,7 +292,6 @@ async def watch_player(
             let isSwipingLeft = false;
             let isSwipingRight = false;
 
-            // স্ক্রিন মুভমেন্ট রুকতে পাসেসিভ ফলস করা হয়েছে
             wrapper.addEventListener('touchstart', (e) => {{
                 if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
                 if (e.touches.length === 1) {{
@@ -320,7 +311,7 @@ async def watch_player(
 
             wrapper.addEventListener('touchmove', (e) => {{
                 if (!isSwipingLeft && !isSwipingRight) return;
-                e.preventDefault(); // পেজ বা স্ক্রিন যাতে উপরে-নিচে না নড়ে
+                e.preventDefault();
 
                 let deltaY = startY - e.touches[0].clientY;
                 let change = (deltaY / window.innerHeight) * 150;
@@ -378,6 +369,9 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
     range_header = request.headers.get('range')
     
     decoded_filename = unquote(file_name)
+    telegram_mime = getattr(media, 'mime_type', '')
+    media_mime = get_media_mime_type(decoded_filename, telegram_mime)
+    
     disposition_type = "attachment" if is_download else "inline"
 
     if range_header:
@@ -395,7 +389,6 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
         content_length = (end - start) + 1
 
         async def fast_ranged_streamer():
-            # টেলিগ্রাম থেকে সঠিক অফসেটে ডাটা স্ট্রিম
             async for chunk in bot.stream_media(msg, offset=start, limit=content_length):
                 yield chunk
 
@@ -403,7 +396,7 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
             'Content-Range': f'bytes {start}-{end}/{file_size}',
             'Accept-Ranges': 'bytes',
             'Content-Length': str(content_length),
-            'Content-Type': 'video/mp4',
+            'Content-Type': media_mime,
             'Content-Disposition': f'{disposition_type}; filename="{decoded_filename}"'
         }
         return StreamingResponse(fast_ranged_streamer(), status_code=206, headers=headers)
@@ -416,7 +409,7 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
         headers = {
             'Accept-Ranges': 'bytes',
             'Content-Length': str(file_size),
-            'Content-Type': 'video/mp4',
+            'Content-Type': media_mime,
             'Content-Disposition': f'{disposition_type}; filename="{decoded_filename}"'
         }
         return StreamingResponse(fast_full_streamer(), status_code=200, headers=headers)
@@ -545,15 +538,12 @@ async def main():
 
         media = message.document or message.video or message.audio
         original_name = getattr(media, 'file_name', None) or f"video_{message.id}.mp4"
-        mime_type = getattr(media, 'mime_type', '')
             
         safe_name = clean_and_encode_filename(original_name)
         file_size = humanbytes(getattr(media, 'file_size', 0))
 
         watch_link = f"{URL}/watch/{target_chat_id}/{target_msg_id}/{safe_name}"
         download_link = f"{URL}/download/{target_chat_id}/{target_msg_id}/{safe_name}"
-
-        _, status_note = check_streamable(original_name, mime_type)
 
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Watch Online ({quality}p) 🎬", url=watch_link)],
@@ -567,7 +557,7 @@ async def main():
             f"📁 **ফাইল নাম:** `{original_name}`\n"
             f"🏷 **কোয়ালিটি:** `{quality}p` | 📦 **সাইজ:** `{file_size}`\n"
             f"🆔 **Message ID:** `{target_msg_id}`\n\n"
-            f"ℹ️ {status_note}\n\n"
+            f"✅ আপনি ভিডিওটি দেখতে এবং ডাউনলোড করতে পারবেন।\n\n"
             f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
         )
 
@@ -608,15 +598,11 @@ async def main():
                 msg = await bot.get_messages(int(target_chat_id), int(target_msg_id))
                 media = msg.document or msg.video or msg.audio
                 file_size = humanbytes(getattr(media, 'file_size', 0))
-                mime_type = getattr(media, 'mime_type', '')
             except Exception:
                 file_size = "N/A"
-                mime_type = ""
 
             watch_link = f"{URL}/watch/{target_chat_id}/{target_msg_id}/{safe_name}"
             download_link = f"{URL}/download/{target_chat_id}/{target_msg_id}/{safe_name}"
-
-            _, status_note = check_streamable(new_name, mime_type)
 
             reply_markup = InlineKeyboardMarkup([
                 [InlineKeyboardButton(f"Watch Online ({quality}p) 🎬", url=watch_link)],
@@ -630,7 +616,7 @@ async def main():
                 f"📁 **ফাইল নাম:** `{new_name}`\n"
                 f"🏷 **কোয়ালিটি:** `{quality}p` | 📦 **সাইজ:** `{file_size}`\n"
                 f"🆔 **Message ID:** `{target_msg_id}`\n\n"
-                f"ℹ️ {status_note}\n\n"
+                f"✅ আপনি ভিডিওটি দেখতে এবং ডাউনলোড করতে পারবেন।\n\n"
                 f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
             )
 
