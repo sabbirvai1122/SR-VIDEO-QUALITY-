@@ -21,16 +21,8 @@ PORT = int(os.environ.get("PORT", "8080"))
 BIN_CHANNEL = int(os.environ.get("BIN_CHANNEL", "-1004450462812"))
 CHANNEL_LINK = "https://t.me/ss_anime_box"
 
-# ----------------- Client Setup ----------------- #
-
-bot = Client(
-    name="bot_session",
-    api_id=API_ID,
-    api_hash=API_HASH,
-    bot_token=BOT_TOKEN,
-    in_memory=True,
-    max_concurrent_transmissions=10
-)
+# Global Client Placeholder
+bot = None
 
 app = FastAPI()
 
@@ -67,7 +59,7 @@ def humanbytes(size):
             return f"{size:.2f} {unit}"
         size /= 1024.0
 
-# ----------------- Web Player (With Branding Card & Gestures) ----------------- #
+# ----------------- Web Player ----------------- #
 
 @app.api_route("/", methods=["GET", "HEAD"], response_class=HTMLResponse)
 async def root():
@@ -111,7 +103,6 @@ async def watch_player(chat_id: int, message_id: int, file_name: str):
                 outline: none;
             }}
             
-            /* Card Design preserved */
             .card {{
                 margin: 20px 15px;
                 padding: 16px;
@@ -143,7 +134,6 @@ async def watch_player(chat_id: int, message_id: int, file_name: str):
                 color: #9aa0a6;
             }}
 
-            /* Gestures Overlay */
             .overlay-indicator {{
                 position: absolute;
                 top: 50%;
@@ -170,7 +160,6 @@ async def watch_player(chat_id: int, message_id: int, file_name: str):
             <div id="right-indicator" class="overlay-indicator">Volume: <span id="v-val">100</span>%</div>
         </div>
 
-        <!-- SS ANIME BOX Card -->
         <div class="card">
             <h2>SS ANIME BOX</h2>
             <p>High Quality Anime Streaming</p>
@@ -298,71 +287,85 @@ async def handle_file_stream(chat_id: int, message_id: int, file_name: str, requ
         }
         return StreamingResponse(fast_full_streamer(), status_code=200, headers=headers)
 
-# ----------------- Bot Handlers ----------------- #
+# ----------------- Main Async Entry Point ----------------- #
 
-@bot.on_message(filters.command("start") & filters.private)
-async def start_cmd(client, message: Message):
-    await message.reply_text("👋 **SS Anime Box Bot Active!**\n\nফাইল পাঠান, দ্রুত স্ট্রিম লিংক পেয়ে যাবেন।")
+async def main():
+    global bot
+    
+    # Create the asyncio event loop first
+    loop = asyncio.get_running_loop()
+    
+    # Initialize client inside active event loop
+    bot = Client(
+        name="bot_session",
+        api_id=API_ID,
+        api_hash=API_HASH,
+        bot_token=BOT_TOKEN,
+        in_memory=True,
+        max_concurrent_transmissions=10
+    )
 
-@bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
-async def handle_media(client, message: Message):
-    try:
+    # Attach Handlers
+    @bot.on_message(filters.command("start") & filters.private)
+    async def start_cmd(client, message: Message):
+        await message.reply_text("👋 **SS Anime Box Bot Active!**\n\nফাইল পাঠান, দ্রুত স্ট্রিম লিংক পেয়ে যাবেন।")
+
+    @bot.on_message(filters.private & (filters.document | filters.video | filters.audio))
+    async def handle_media(client, message: Message):
         try:
-            bin_msg = await message.forward(BIN_CHANNEL)
-            target_chat_id = BIN_CHANNEL
-            target_msg_id = bin_msg.id
-        except Exception:
-            target_chat_id = message.chat.id
-            target_msg_id = message.id
+            try:
+                bin_msg = await message.forward(BIN_CHANNEL)
+                target_chat_id = BIN_CHANNEL
+                target_msg_id = bin_msg.id
+            except Exception:
+                target_chat_id = message.chat.id
+                target_msg_id = message.id
 
-        media = message.document or message.video or message.audio
-        original_name = getattr(media, 'file_name', None) or f"video_{message.id}.mp4"
+            media = message.document or message.video or message.audio
+            original_name = getattr(media, 'file_name', None) or f"video_{message.id}.mp4"
+                
+            safe_name = clean_and_encode_filename(original_name)
+            file_size = humanbytes(getattr(media, 'file_size', 0))
             
-        safe_name = clean_and_encode_filename(original_name)
-        file_size = humanbytes(getattr(media, 'file_size', 0))
-        
-        # Format Smart Detection
-        ext = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else "mp4"
-        file_ext = ext.upper()
+            ext = original_name.rsplit('.', 1)[-1].lower() if '.' in original_name else "mp4"
+            file_ext = ext.upper()
 
-        if ext == "mp4":
-            status_msg = "✅ ব্রাউজারে সরাসরি চলবে"
-        else:
-            status_msg = "⚠️ MKV/অন্যান্য ফাইল; ব্রাউজারে না চললে Direct Download করুন"
+            if ext == "mp4":
+                status_msg = "✅ ব্রাউজারে সরাসরি চলবে"
+            else:
+                status_msg = "⚠️ MKV/অন্যান্য ফাইল; ব্রাউজারে না চললে Direct Download করুন"
 
-        watch_link = f"{URL}/watch/{target_chat_id}/{target_msg_id}/{safe_name}"
-        download_link = f"{URL}/download/{target_chat_id}/{target_msg_id}/{safe_name}"
+            watch_link = f"{URL}/watch/{target_chat_id}/{target_msg_id}/{safe_name}"
+            download_link = f"{URL}/download/{target_chat_id}/{target_msg_id}/{safe_name}"
 
-        reply_markup = InlineKeyboardMarkup([
-            [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
-            [InlineKeyboardButton("Direct Download 📥", url=download_link)],
-            [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
-        ])
+            reply_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton("Watch Online 🎬", url=watch_link)],
+                [InlineKeyboardButton("Direct Download 📥", url=download_link)],
+                [InlineKeyboardButton("Our Channel 📢", url=CHANNEL_LINK)]
+            ])
 
-        caption = (
-            f"📁 **ফাইল নাম:** `{original_name}`\n"
-            f"🏷 **টাইপ:** `{file_ext}` | 📦 **সাইজ:** `{file_size}`\n"
-            f"📌 **স্ট্যাটাস:** {status_msg}\n\n"
-            f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
-        )
-        await message.reply_text(caption, reply_markup=reply_markup)
+            caption = (
+                f"📁 **ফাইল নাম:** `{original_name}`\n"
+                f"🏷 **টাইপ:** `{file_ext}` | 📦 **সাইজ:** `{file_size}`\n"
+                f"📌 **স্ট্যাটাস:** {status_msg}\n\n"
+                f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
+            )
+            await message.reply_text(caption, reply_markup=reply_markup)
 
-    except Exception as e:
-        await message.reply_text(f"❌ লিংক তৈরিতে সমস্যা হয়েছে: `{str(e)}`")
+        except Exception as e:
+            await message.reply_text(f"❌ লিংক তৈরিতে সমস্যা হয়েছে: `{str(e)}`")
 
-# ----------------- Main Execution ----------------- #
-
-async def start_all():
+    # Start Telegram Bot Client
     await bot.start()
+    
+    # Configure and run Uvicorn FastAPI Server concurrently
     config = uvicorn.Config(app, host="0.0.0.0", port=PORT, log_level="info")
     server = uvicorn.Server(config)
+    
     await server.serve()
 
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
     try:
-        loop.run_until_complete(start_all())
-    except KeyboardInterrupt:
+        asyncio.run(main())
+    except (KeyboardInterrupt, SystemExit):
         pass
-    finally:
-        loop.run_until_complete(bot.stop())
