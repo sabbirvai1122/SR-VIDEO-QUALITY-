@@ -56,7 +56,7 @@ def check_streamable(file_name: str, mime_type: str = ""):
     if ext in [".mp4", ".m4v"]:
         return True, "✅ আপনি এই ভিডিওটি সরাসরি দেখতে এবং ডাউনলোড করতে পারবেন।"
     elif ext in [".mkv", ".avi", ".flv", ".wmv", ".webm"]:
-        return False, f"⚠️ আপনি এই ভিডিওটি প্লেয়ারে সরাসরি দেখতে পারবেন না (কারণ: {ext.upper()} ফরম্যাট সাধারণ ব্রাউজারে সাপোর্ট করে না)। তবে আপনি এটি সরাসরি ডাউনলোড করতে পারবেন।"
+        return False, f"⚠️ আপনি এই ভিডিওটি প্লেয়ারে সরাসরি দেখতে পারবেন না (কারণ: {ext.upper()} ফরম্যাট ব্রাউজারে স্ট্রিম সাপোর্ট করে না)। তবে আপনি এটি ডাউনলোড করে দেখতে পারবেন।"
     else:
         return True, "✅ আপনি এই ভিডিওটি দেখতে এবং ডাউনলোড করতে পারবেন।"
 
@@ -132,6 +132,35 @@ async def watch_player(
                 object-fit: contain;
                 display: block;
                 outline: none;
+            }}
+
+            /* Custom Overlay Play Button for Easy Toggle */
+            .center-play-btn {{
+                position: absolute;
+                top: 50%;
+                left: 50%;
+                transform: translate(-50%, -50%);
+                width: 60px;
+                height: 60px;
+                background: rgba(0, 0, 0, 0.6);
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                cursor: pointer;
+                z-index: 30;
+                opacity: 0;
+                transition: opacity 0.2s ease;
+                pointer-events: none;
+            }}
+            .center-play-btn svg {{
+                width: 30px;
+                height: 30px;
+                fill: #ffffff;
+            }}
+            .video-wrapper:hover .center-play-btn, .video-wrapper:active .center-play-btn {{
+                opacity: 1;
+                pointer-events: auto;
             }}
 
             .hud-overlay {{
@@ -235,9 +264,14 @@ async def watch_player(
     <body>
 
         <div class="video-wrapper" id="wrapper">
-            <video id="player" controls autoplay playsinline preload="auto">
+            <video id="player" controls autoplay playsinline preload="metadata">
                 <source id="videoSource" src="{default_stream_url}" type="video/mp4">
             </video>
+
+            <!-- Center Toggle Play/Pause Button -->
+            <div class="center-play-btn" id="centerPlayBtn" onclick="togglePlayPause()">
+                <svg id="playIcon" viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>
+            </div>
 
             <div id="volume-hud" class="hud-overlay">
                 <div class="hud-icon">🔊</div>
@@ -255,7 +289,7 @@ async def watch_player(
 
             <div class="custom-quality-box">
                 <svg class="gear-icon" viewBox="0 0 24 24" fill="#ffffff">
-                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6-3.6z"/>
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
                 </svg>
                 <select class="quality-select" id="qualitySelector" onchange="changeQuality(this.value)">
                     {quality_options_html}
@@ -271,12 +305,29 @@ async def watch_player(
         <script>
             const video = document.getElementById('player');
             const wrapper = document.getElementById('wrapper');
+            const playIcon = document.getElementById('playIcon');
             
             const volumeHud = document.getElementById('volume-hud');
             const volumeFill = document.getElementById('volume-fill');
             
             const brightnessHud = document.getElementById('brightness-hud');
             const brightnessFill = document.getElementById('brightness-fill');
+
+            function togglePlayPause() {{
+                if (video.paused) {{
+                    video.play();
+                }} else {{
+                    video.pause();
+                }}
+            }}
+
+            video.addEventListener('play', () => {{
+                playIcon.innerHTML = '<path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z"/>';
+            }});
+
+            video.addEventListener('pause', () => {{
+                playIcon.innerHTML = '<path d="M8 5v14l11-7z"/>';
+            }});
 
             function changeQuality(newUrl) {{
                 if (!newUrl) return;
@@ -301,7 +352,7 @@ async def watch_player(
             let isSwipingRight = false;
 
             wrapper.addEventListener('touchstart', (e) => {{
-                if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION') return;
+                if (e.target.tagName === 'SELECT' || e.target.tagName === 'OPTION' || e.target.id === 'centerPlayBtn') return;
                 if (e.touches.length === 1) {{
                     startY = e.touches[0].clientY;
                     const screenWidth = window.innerWidth;
@@ -439,13 +490,27 @@ async def main():
             "২. **মাল্টি-কোয়ালিটি (2/3 Quality) একত্র করার কমান্ড:**\n"
             "`/combine <480p_ID> <720p_ID> <1080p_ID> <custom_filename>`\n"
             "*(উদাহরন: `/combine 80 81 82 Episode_01.mp4`)*\n\n"
-            "🗑 **লিংক মুছে ফেলার নিয়ম:**\n"
-            "লিংক মেসেজের সাথে থাকা **Delete Link** বোতামে চাপুন।"
+            "🗑 **লিংক বা ফাইল ডিলিট করার নিয়ম:**\n"
+            "চ্যাটে `/del <Message_ID>` লিখে পাঠাল লিংক রিমুভ হয়ে যাবে।"
         )
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
         ])
         await message.reply_text(start_msg, reply_markup=reply_markup)
+
+    @bot.on_message(filters.command("del") & filters.private)
+    async def delete_file_cmd(client, message: Message):
+        try:
+            args = message.text.split()
+            if len(args) < 2:
+                await message.reply_text("❌ ফাইল ডিলিট করতে মেসেজ আইডি দিন!\nউদাহরণ: `/del 86`")
+                return
+            
+            target_msg_id = int(args[1])
+            await bot.delete_messages(BIN_CHANNEL, target_msg_id)
+            await message.reply_text(f"🗑 Message ID `{target_msg_id}` এর ভিডিও ও লিংক সফলভাবে মুছে ফেলা হয়েছে!")
+        except Exception as e:
+            await message.reply_text(f"❌ ডিলিট করা যায়নি বা আইডি খুঁজে পাওয়া যায়নি: `{str(e)}`")
 
     @bot.on_message(filters.command("combine") & filters.private)
     async def combine_qualities(client, message: Message):
@@ -571,7 +636,7 @@ async def main():
         await callback.message.reply_text("✏️ **অনুগ্রহ করে নতুন ফাইল নামটি টাইপ করে পাঠান:**\n*(যেমন: Episode_01.mp4)*")
         await callback.answer()
 
-    @bot.on_message(filters.private & filters.text & ~filters.command(["start", "combine"]))
+    @bot.on_message(filters.private & filters.text & ~filters.command(["start", "combine", "del"]))
     async def process_rename_input(client, message: Message):
         user_id = message.from_user.id
         if user_id in user_rename_state:
