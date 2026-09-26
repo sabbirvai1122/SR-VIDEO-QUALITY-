@@ -23,6 +23,7 @@ CHANNEL_LINK = "https://t.me/ss_anime_box"
 
 bot = None
 user_file_cache = {}
+user_rename_state = {}
 
 app = FastAPI()
 
@@ -49,6 +50,15 @@ def humanbytes(size):
         if size < 1024.0:
             return f"{size:.2f} {unit}"
         size /= 1024.0
+
+def check_streamable(file_name: str, mime_type: str = ""):
+    ext = os.path.splitext(file_name)[1].lower() if file_name else ""
+    if ext in [".mp4", ".m4v"]:
+        return True, "✅ আপনি এই ভিডিওটি সরাসরি দেখতে এবং ডাউনলোড করতে পারবেন।"
+    elif ext in [".mkv", ".avi", ".flv", ".wmv", ".webm"]:
+        return False, f"⚠️ আপনি এই ভিডিওটি প্লেয়ারে সরাসরি দেখতে পারবেন না (কারণ: {ext.upper()} ফরম্যাট সাধারণ ব্রাউজারে সাপোর্ট করে না)। তবে আপনি এটি সরাসরি ডাউনলোড করতে পারবেন।"
+    else:
+        return True, "✅ আপনি এই ভিডিওটি দেখতে এবং ডাউনলোড করতে পারবেন।"
 
 # ----------------- Web Player Endpoint ----------------- #
 
@@ -81,7 +91,7 @@ async def watch_player(
         options_list.append(f'<option value="{url_1080}">1080p</option>')
 
     if not options_list:
-        options_list.append(f'<option value="{default_stream_url}">Auto Quality</option>')
+        options_list.append(f'<option value="{default_stream_url}">Quality</option>')
 
     quality_options_html = "\n".join(options_list)
 
@@ -124,7 +134,6 @@ async def watch_player(
                 outline: none;
             }}
 
-            /* Top HUD Progress Bars */
             .hud-overlay {{
                 position: absolute;
                 top: 15%;
@@ -174,7 +183,6 @@ async def watch_player(
                 background: #e5e5ea;
             }}
 
-            /* Custom Quality UI Button next to Gear Icon */
             .custom-quality-box {{
                 position: absolute;
                 bottom: 12px;
@@ -182,23 +190,23 @@ async def watch_player(
                 z-index: 40;
                 display: flex;
                 align-items: center;
-                gap: 6px;
+                gap: 4px;
                 background: rgba(0, 0, 0, 0.75);
-                padding: 4px 8px;
+                padding: 4px 6px;
                 border-radius: 6px;
                 border: 1px solid rgba(255, 255, 255, 0.2);
             }}
 
             .gear-icon {{
-                width: 16px;
-                height: 16px;
+                width: 18px;
+                height: 18px;
             }}
 
             .quality-select {{
                 background: transparent;
                 color: #fff;
                 border: none;
-                font-size: 12px;
+                font-size: 13px;
                 font-weight: 600;
                 outline: none;
                 cursor: pointer;
@@ -231,7 +239,6 @@ async def watch_player(
                 <source id="videoSource" src="{default_stream_url}" type="video/mp4">
             </video>
 
-            <!-- Volume Overlay Bar -->
             <div id="volume-hud" class="hud-overlay">
                 <div class="hud-icon">🔊</div>
                 <div class="hud-bar-container">
@@ -239,7 +246,6 @@ async def watch_player(
                 </div>
             </div>
 
-            <!-- Brightness Overlay Bar -->
             <div id="brightness-hud" class="hud-overlay">
                 <div class="hud-icon">☀️</div>
                 <div class="hud-bar-container">
@@ -247,10 +253,9 @@ async def watch_player(
                 </div>
             </div>
 
-            <!-- Quality Option next to Gear Icon -->
             <div class="custom-quality-box">
                 <svg class="gear-icon" viewBox="0 0 24 24" fill="#ffffff">
-                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6 3.6z"/>
+                    <path d="M19.14 12.94c.04-.3.06-.61.06-.94 0-.32-.02-.64-.07-.94l2.03-1.58c.18-.14.23-.41.12-.61l-1.92-3.32c-.12-.22-.37-.29-.59-.22l-2.39.96c-.5-.38-1.03-.7-1.62-.94l-.36-2.54c-.04-.24-.24-.41-.48-.41h-3.84c-.24 0-.43.17-.47.41l-.36 2.54c-.59.24-1.13.57-1.62.94l-2.39-.96c-.22-.08-.47 0-.59.22L2.74 8.87c-.12.21-.08.47.12.61l2.03 1.58c-.05.3-.09.63-.09.94s.02.64.07.94l-2.03 1.58c-.18.14-.23.41-.12.61l1.92 3.32c.12.22.37.29.59.22l2.39-.96c.5.38 1.03.7 1.62.94l.36 2.54c.05.24.24.41.48.41h3.84c.24 0 .44-.17.47-.41l.36-2.54c.59-.24 1.13-.56 1.62-.94l2.39.96c.22.08.47 0 .59-.22l1.92-3.32c.12-.22.07-.47-.12-.61l-2.01-1.58zM12 15.6c-1.98 0-3.6-1.62-3.6-3.6s1.62-3.6 3.6-3.6 3.6 1.62 3.6 3.6-1.62 3.6-3.6-3.6z"/>
                 </svg>
                 <select class="quality-select" id="qualitySelector" onchange="changeQuality(this.value)">
                     {quality_options_html}
@@ -520,6 +525,7 @@ async def main():
 
         media = message.document or message.video or message.audio
         original_name = getattr(media, 'file_name', None) or f"video_{message.id}.mp4"
+        mime_type = getattr(media, 'mime_type', '')
             
         safe_name = clean_and_encode_filename(original_name)
         file_size = humanbytes(getattr(media, 'file_size', 0))
@@ -527,9 +533,12 @@ async def main():
         watch_link = f"{URL}/watch/{target_chat_id}/{target_msg_id}/{safe_name}"
         download_link = f"{URL}/download/{target_chat_id}/{target_msg_id}/{safe_name}"
 
+        _, status_note = check_streamable(original_name, mime_type)
+
         reply_markup = InlineKeyboardMarkup([
             [InlineKeyboardButton(f"Watch Online ({quality}p) 🎬", url=watch_link)],
             [InlineKeyboardButton(f"Direct Download ({quality}p) 📥", url=download_link)],
+            [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{target_chat_id}_{target_msg_id}_{quality}")],
             [InlineKeyboardButton("Delete Link 🗑", callback_data="delete_msg")],
             [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
         ])
@@ -538,10 +547,80 @@ async def main():
             f"📁 **ফাইল নাম:** `{original_name}`\n"
             f"🏷 **কোয়ালিটি:** `{quality}p` | 📦 **সাইজ:** `{file_size}`\n"
             f"🆔 **Message ID:** `{target_msg_id}`\n\n"
+            f"ℹ️ {status_note}\n\n"
             f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
         )
 
         await callback.message.edit_text(caption, reply_markup=reply_markup)
+
+    @bot.on_callback_query(filters.regex("^rename_"))
+    async def handle_rename_click(client, callback: CallbackQuery):
+        data = callback.data.split("_")
+        chat_id = data[1]
+        msg_id = data[2]
+        quality = data[3]
+        
+        user_id = callback.from_user.id
+        user_rename_state[user_id] = {
+            "chat_id": chat_id,
+            "msg_id": msg_id,
+            "quality": quality,
+            "bot_msg_id": callback.message.id
+        }
+
+        await callback.message.reply_text("✏️ **অনুগ্রহ করে নতুন ফাইল নামটি টাইপ করে পাঠান:**\n*(যেমন: Episode_01.mp4)*")
+        await callback.answer()
+
+    @bot.on_message(filters.private & filters.text & ~filters.command(["start", "combine"]))
+    async def process_rename_input(client, message: Message):
+        user_id = message.from_user.id
+        if user_id in user_rename_state:
+            state = user_rename_state.pop(user_id)
+            new_name = message.text.strip()
+
+            target_chat_id = state["chat_id"]
+            target_msg_id = state["msg_id"]
+            quality = state["quality"]
+
+            safe_name = clean_and_encode_filename(new_name)
+            
+            try:
+                msg = await bot.get_messages(int(target_chat_id), int(target_msg_id))
+                media = msg.document or msg.video or msg.audio
+                file_size = humanbytes(getattr(media, 'file_size', 0))
+                mime_type = getattr(media, 'mime_type', '')
+            except Exception:
+                file_size = "N/A"
+                mime_type = ""
+
+            watch_link = f"{URL}/watch/{target_chat_id}/{target_msg_id}/{safe_name}"
+            download_link = f"{URL}/download/{target_chat_id}/{target_msg_id}/{safe_name}"
+
+            _, status_note = check_streamable(new_name, mime_type)
+
+            reply_markup = InlineKeyboardMarkup([
+                [InlineKeyboardButton(f"Watch Online ({quality}p) 🎬", url=watch_link)],
+                [InlineKeyboardButton(f"Direct Download ({quality}p) 📥", url=download_link)],
+                [InlineKeyboardButton("Rename File ✏️", callback_data=f"rename_{target_chat_id}_{target_msg_id}_{quality}")],
+                [InlineKeyboardButton("Delete Link 🗑", callback_data="delete_msg")],
+                [InlineKeyboardButton("Join Channel 📢", url=CHANNEL_LINK)]
+            ])
+
+            caption = (
+                f"📁 **ফাইল নাম:** `{new_name}`\n"
+                f"🏷 **কোয়ালিটি:** `{quality}p` | 📦 **সাইজ:** `{file_size}`\n"
+                f"🆔 **Message ID:** `{target_msg_id}`\n\n"
+                f"ℹ️ {status_note}\n\n"
+                f"👇 **আপনার লিংক নিচে দেওয়া হলো:**"
+            )
+
+            await bot.edit_message_text(
+                chat_id=message.chat.id,
+                message_id=state["bot_msg_id"],
+                text=caption,
+                reply_markup=reply_markup
+            )
+            await message.reply_text("✅ ফাইলের নাম সফলভাবে আপডেট করা হয়েছে!")
 
     @bot.on_callback_query(filters.regex("^delete_msg$"))
     async def handle_delete_callback(client, callback: CallbackQuery):
@@ -553,7 +632,6 @@ async def main():
 
     await bot.start()
 
-    # --------------- Set Bot Menu Commands --------------- #
     await bot.set_bot_commands([
         BotCommand("start", "🚀 Start the bot"),
         BotCommand("combine", "📂 Combine Multiple Qualities"),
